@@ -186,8 +186,15 @@ button:hover{filter:brightness(1.2)}button:active{transform:scale(.98)}
         <strong id="arena-comm-status" style="color:#40c057;">CONNECTED (#0)</strong>
       </div>
       <div class="stat">
-        <small>Stop Reason</small>
-        <strong id="arena-stop-reason" style="color:#51cf66;">NONE</strong>
+        <small>Stop Reason / Code</small>
+        <div>
+          <strong id="arena-stop-reason" style="color:#51cf66;">NONE</strong>
+          <small id="arena-stop-code" style="display:block;font-size:10px;color:#cbd5dc;">(NONE)</small>
+        </div>
+      </div>
+      <div class="stat">
+        <small>Target Following Distance</small>
+        <strong id="arena-target-dist-badge" style="color:#74c0fc;">2.50m (±0.3m)</strong>
       </div>
       <div class="stat">
         <small>Navigation Mode</small>
@@ -245,6 +252,32 @@ button:hover{filter:brightness(1.2)}button:active{transform:scale(.98)}
             <button onclick="setPersonSpeed(0.5)" style="flex:1;padding:4px;background:#162530;color:#91a0a9;font-size:11px;border:1px solid #2a3d4c;border-radius:4px;cursor:pointer;">SLOW (0.5m/s)</button>
             <button onclick="setPersonSpeed(1.0)" style="flex:1;padding:4px;background:#1e3845;color:#74c0fc;font-size:11px;border:1px solid #339af0;border-radius:4px;cursor:pointer;">NORM (1.0m/s)</button>
             <button onclick="setPersonSpeed(1.8)" style="flex:1;padding:4px;background:#162530;color:#91a0a9;font-size:11px;border:1px solid #2a3d4c;border-radius:4px;cursor:pointer;">FAST (1.8m/s)</button>
+          </div>
+        </div>
+
+        <!-- Following Distance Control Panel -->
+        <div style="background:#111b22;border:1px solid #2a3d4c;border-radius:10px;padding:12px;">
+          <div style="font-size:12px;font-weight:700;color:#cbd5dc;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;">
+            <span>TARGET FOLLOWING DISTANCE</span>
+            <span id="arena-dist-val-badge" style="background:#1e3845;color:#74c0fc;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700;">2.5 m</span>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <input type="range" id="arena-dist-slider" min="1.0" max="5.0" step="0.1" value="2.5" oninput="onFollowDistSliderInput(this.value)" onchange="applyFollowDistance(this.value)" style="flex:1;accent-color:#339af0;cursor:pointer;">
+              <input type="number" id="arena-dist-number" min="1.0" max="5.0" step="0.1" value="2.5" onchange="applyFollowDistance(this.value)" style="width:58px;padding:4px 6px;background:#0d1822;border:1px solid #2a3d4c;border-radius:4px;color:#f4f1e8;font-size:12px;font-weight:700;text-align:center;">
+              <span style="font-size:11px;color:#91a0a9;">m</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:10px;color:#91a0a9;">
+              <span>Min: 1.0m</span>
+              <span id="arena-safe-zone-text" style="color:#40c057;">Deadband: 2.2m – 2.8m (±0.3m)</span>
+              <span>Max: 5.0m</span>
+            </div>
+            <div style="display:flex;gap:6px;">
+              <button onclick="setFollowDistancePreset(1.5)" style="flex:1;padding:5px;background:#162530;color:#cbd5dc;font-size:11px;border:1px solid #2a3d4c;border-radius:4px;cursor:pointer;">1.5m (Close)</button>
+              <button onclick="setFollowDistancePreset(2.5)" style="flex:1;padding:5px;background:#1e3845;color:#74c0fc;font-size:11px;border:1px solid #339af0;border-radius:4px;cursor:pointer;">2.5m (Def)</button>
+              <button onclick="setFollowDistancePreset(3.5)" style="flex:1;padding:5px;background:#162530;color:#cbd5dc;font-size:11px;border:1px solid #2a3d4c;border-radius:4px;cursor:pointer;">3.5m (Far)</button>
+              <button onclick="applyFollowDistance()" style="padding:5px 10px;background:#244933;color:#40c057;font-size:11px;font-weight:700;border:1px solid #2b8a3e;border-radius:4px;cursor:pointer;">APPLY</button>
+            </div>
           </div>
         </div>
 
@@ -1719,6 +1752,7 @@ let arenaState = null;
 let personWalkSpeed = 1.0;
 let keysPressed = {};
 let arenaIntervalId = null;
+let isDraggingDistSlider = false;
 
 const arenaCanvas = document.getElementById('arenaCanvas');
 const arenaCtx = arenaCanvas ? arenaCanvas.getContext('2d') : null;
@@ -1803,6 +1837,7 @@ function updateArenaTelemetry() {
   }
 
   const stopReasonEl = document.getElementById('arena-stop-reason');
+  const stopCodeEl = document.getElementById('arena-stop-code');
   if (stopReasonEl) {
     const sr = arenaState.stop_reason || 'NONE';
     stopReasonEl.textContent = sr;
@@ -1814,6 +1849,31 @@ function updateArenaTelemetry() {
       stopReasonEl.style.color = '#ffd43b';
     } else {
       stopReasonEl.style.color = '#51cf66';
+    }
+  }
+  if (stopCodeEl) {
+    const sc = arenaState.stop_code || 'NONE';
+    stopCodeEl.textContent = `(${sc})`;
+  }
+
+  const tgtDistBadge = document.getElementById('arena-target-dist-badge');
+  const ar = arenaState.arena || {};
+  const currentTargetDist = (ar.target_following_distance_m !== undefined) ? ar.target_following_distance_m : 2.5;
+  const currentTol = (ar.distance_tolerance_m !== undefined) ? ar.distance_tolerance_m : 0.3;
+  if (tgtDistBadge) {
+    tgtDistBadge.textContent = `${currentTargetDist.toFixed(2)}m (±${currentTol.toFixed(1)}m)`;
+  }
+
+  if (!isDraggingDistSlider) {
+    const distSlider = document.getElementById('arena-dist-slider');
+    const distNumber = document.getElementById('arena-dist-number');
+    const distBadge = document.getElementById('arena-dist-val-badge');
+    const safeZoneText = document.getElementById('arena-safe-zone-text');
+    if (distSlider) distSlider.value = currentTargetDist.toFixed(1);
+    if (distNumber) distNumber.value = currentTargetDist.toFixed(1);
+    if (distBadge) distBadge.textContent = `${currentTargetDist.toFixed(1)} m`;
+    if (safeZoneText && ar.safe_zone_min_m !== undefined && ar.safe_zone_max_m !== undefined) {
+      safeZoneText.textContent = `Deadband: ${ar.safe_zone_min_m.toFixed(1)}m – ${ar.safe_zone_max_m.toFixed(1)}m (±${currentTol.toFixed(1)}m)`;
     }
   }
 
@@ -1990,16 +2050,29 @@ function renderArena() {
   ctx.fill();
   ctx.stroke();
 
-  // Target Following Zone Arc (1.2m - 1.8m)
+  // Dynamic Target Following Zone Arc (safe_zone_min_m to safe_zone_max_m)
+  const szMax = (ar.safe_zone_max_m !== undefined) ? ar.safe_zone_max_m : 2.8;
+  const szMin = (ar.safe_zone_min_m !== undefined) ? ar.safe_zone_min_m : 2.2;
+  const setpointDist = (ar.target_following_distance_m !== undefined) ? ar.target_following_distance_m : 2.5;
+
   ctx.fillStyle = 'rgba(64, 192, 87, 0.12)';
   ctx.strokeStyle = 'rgba(64, 192, 87, 0.5)';
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.arc(0, 0, 1.8 * ARENA_SCALE_X, -fovRad, fovRad);
-  ctx.arc(0, 0, 1.2 * ARENA_SCALE_X, fovRad, -fovRad, true);
+  ctx.arc(0, 0, szMax * ARENA_SCALE_X, -fovRad, fovRad);
+  ctx.arc(0, 0, szMin * ARENA_SCALE_X, fovRad, -fovRad, true);
   ctx.closePath();
   ctx.fill();
   ctx.stroke();
+
+  // Setpoint indicator arc
+  ctx.strokeStyle = 'rgba(116, 192, 252, 0.65)';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.arc(0, 0, setpointDist * ARENA_SCALE_X, -fovRad, fovRad);
+  ctx.stroke();
+  ctx.setLineDash([]);
 
   // 360 Degree Search Sweep Indicator
   if (arenaState.navigation_mode === 'TARGET_SEARCH') {
@@ -2384,6 +2457,65 @@ async function arenaCancel360Search() {
   } catch (e) {
     setLog('Cancel search error: ' + e.message, true);
   }
+}
+
+function onFollowDistSliderInput(val) {
+  isDraggingDistSlider = true;
+  const numVal = parseFloat(val);
+  const badge = document.getElementById('arena-dist-val-badge');
+  const numInput = document.getElementById('arena-dist-number');
+  const safeZoneText = document.getElementById('arena-safe-zone-text');
+  if (badge) badge.textContent = `${numVal.toFixed(1)} m`;
+  if (numInput) numInput.value = numVal.toFixed(1);
+  if (safeZoneText) {
+    const minZ = Math.max(0.7, numVal - 0.3).toFixed(1);
+    const maxZ = (numVal + 0.3).toFixed(1);
+    safeZoneText.textContent = `Deadband: ${minZ}m – ${maxZ}m (±0.3m)`;
+  }
+}
+
+async function applyFollowDistance(val) {
+  isDraggingDistSlider = false;
+  let targetVal = val;
+  if (targetVal === undefined || targetVal === null) {
+    const numInput = document.getElementById('arena-dist-number');
+    targetVal = numInput ? numInput.value : 2.5;
+  }
+  const dist = parseFloat(targetVal);
+  if (isNaN(dist) || dist < 1.0 || dist > 5.0) {
+    setLog(`[FOLLOW] Invalid following distance ${targetVal}m. Range: 1.0m – 5.0m.`, true);
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/follow/distance', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ distance_m: dist })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      if (data.state) {
+        arenaState = data.state;
+        renderArena();
+        updateArenaTelemetry();
+      }
+      setLog(`[FOLLOW] Target following distance set to ${data.target_distance_m}m (Safe zone: ${data.safe_zone_min_m}m – ${data.safe_zone_max_m}m).`);
+    } else {
+      setLog(`[FOLLOW] Error setting distance: ${data.detail || 'Request failed'}`, true);
+    }
+  } catch (e) {
+    setLog(`[FOLLOW] Network error: ${e.message}`, true);
+  }
+}
+
+function setFollowDistancePreset(presetVal) {
+  const slider = document.getElementById('arena-dist-slider');
+  const numInput = document.getElementById('arena-dist-number');
+  if (slider) slider.value = presetVal;
+  if (numInput) numInput.value = presetVal;
+  onFollowDistSliderInput(presetVal);
+  applyFollowDistance(presetVal);
 }
 
 // Canvas Click to Reposition Target Person

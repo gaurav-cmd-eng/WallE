@@ -61,6 +61,8 @@ class FollowController:
 
         # Follow configuration
         self.target_distance_m = target_distance_m
+        self.min_following_distance_m = 1.0
+        self.max_following_distance_m = 5.0
         self.distance_tolerance_m = distance_tolerance_m
         self.min_safe_distance_m = min_safe_distance_m
         self.approach_threshold_m = approach_threshold_m if approach_threshold_m is not None else (target_distance_m + distance_tolerance_m)
@@ -246,6 +248,24 @@ class FollowController:
         else:
             self.manual_override_active = False
             self.state = FollowState.ACQUIRING
+
+    def set_target_distance(self, distance_m: float) -> bool:
+        """
+        Sets target person-following distance within bounds [min_following_distance_m, max_following_distance_m].
+        Recalculates approach threshold and hold min boundaries with distance tolerance hysteresis.
+        Does not reset target selection, clear tracks, or disrupt active detours.
+        """
+        try:
+            dist = float(distance_m)
+        except (TypeError, ValueError):
+            return False
+        if not (self.min_following_distance_m <= dist <= self.max_following_distance_m):
+            return False
+        self.target_distance_m = dist
+        self.approach_threshold_m = dist + self.distance_tolerance_m
+        self.hold_min_m = max(self.min_safe_distance_m, dist - self.distance_tolerance_m)
+        self.hold_max_m = dist + self.distance_tolerance_m
+        return True
 
     def select_person_target(self, person_id: Optional[int]) -> None:
         """Sets target person ID or auto-select if None."""
@@ -609,6 +629,8 @@ class FollowController:
             "selected_tag_id": self.selected_tag_id,
             "current_target": active_target.to_dict() if active_target else None,
             "target_distance_m": self.target_distance_m,
+            "min_following_distance_m": self.min_following_distance_m,
+            "max_following_distance_m": self.max_following_distance_m,
             "distance_tolerance_m": self.distance_tolerance_m,
             "min_safe_distance_m": self.min_safe_distance_m,
             "approach_threshold_m": self.approach_threshold_m,

@@ -84,7 +84,7 @@ person_detector = PersonDetectorManager()
 person_detector.set_camera_checker(lambda: state.get("camera") == "connected")
 
 # Stage 6: Interactive 2D Simulation Arena instance
-sim_arena = SimulationArena(follow_controller=follow_controller, esp32_comm=esp32_comm)
+sim_arena = SimulationArena(follow_controller=follow_controller, esp32_comm=esp32_comm, target_following_distance_m=2.5)
 
 
 def sync_esp32_telemetry():
@@ -329,6 +329,10 @@ class ArenaSensorFailCommand(BaseModel):
 
 class ArenaAvoidanceToggleCommand(BaseModel):
     enabled: Optional[bool] = None
+
+
+class FollowDistanceCommand(BaseModel):
+    distance_m: float = Field(..., description="Target following distance in meters (1.0 to 5.0)")
 
 
 def send_to_esp32(path: str, params: dict):
@@ -1018,6 +1022,45 @@ def cancel_arena_target_search():
     res = sim_arena.cancel_target_search()
     new_state = sim_arena.step()
     return {"ok": res.get("ok", True), "info": res, "state": new_state}
+
+
+@app.get("/api/follow/distance")
+@app.get("/api/arena/distance")
+def get_follow_distance():
+    return {
+        "ok": True,
+        "target_distance_m": round(sim_arena.target_following_distance_m, 2),
+        "safe_zone_min_m": round(sim_arena.safe_zone_min_m, 2),
+        "safe_zone_max_m": round(sim_arena.safe_zone_max_m, 2),
+        "distance_tolerance_m": round(sim_arena.distance_tolerance_m, 2),
+        "min_distance_m": 1.0,
+        "max_distance_m": 5.0
+    }
+
+
+@app.post("/api/follow/distance")
+@app.post("/api/arena/distance")
+def set_follow_distance(cmd: FollowDistanceCommand):
+    dist = cmd.distance_m
+    if dist < 1.0 or dist > 5.0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Target following distance {dist}m out of bounds. Must be between 1.0m and 5.0m."
+        )
+    ok_ctrl = follow_controller.set_target_distance(dist)
+    ok_arena = sim_arena.set_target_following_distance(dist)
+    if not (ok_ctrl and ok_arena):
+        raise HTTPException(status_code=400, detail="Failed to apply target following distance.")
+
+    new_state = sim_arena.step()
+    return {
+        "ok": True,
+        "target_distance_m": round(sim_arena.target_following_distance_m, 2),
+        "safe_zone_min_m": round(sim_arena.safe_zone_min_m, 2),
+        "safe_zone_max_m": round(sim_arena.safe_zone_max_m, 2),
+        "distance_tolerance_m": round(sim_arena.distance_tolerance_m, 2),
+        "state": new_state
+    }
 
 
 

@@ -194,7 +194,8 @@ class SimulationArena:
                  arena_width: float = 10.0,
                  arena_height: float = 8.0,
                  camera_fov_deg: float = 75.0,
-                 camera_range_m: float = 6.0):
+                 camera_range_m: float = 6.0,
+                 target_following_distance_m: Optional[float] = None):
         self.arena_width = arena_width
         self.arena_height = arena_height
         self.camera_fov_deg = camera_fov_deg
@@ -202,6 +203,17 @@ class SimulationArena:
 
         self.follow_controller = follow_controller
         self.esp32_comm = esp32_comm
+
+        # Configurable Person-Following Distance
+        self.min_following_distance_m = 1.0
+        self.max_following_distance_m = 5.0
+        self.distance_tolerance_m = 0.3
+        if target_following_distance_m is not None:
+            self.target_following_distance_m = float(target_following_distance_m)
+        elif self.follow_controller and hasattr(self.follow_controller, "target_distance_m"):
+            self.target_following_distance_m = float(self.follow_controller.target_distance_m)
+        else:
+            self.target_following_distance_m = 2.5
 
         self.running = False
         self.last_update_time = time.time()
@@ -249,6 +261,45 @@ class SimulationArena:
         self.last_decision = "STOP"
         self.last_distance_m = 2.5
         self.last_bearing_deg = 0.0
+
+    @property
+    def safe_zone_min_m(self) -> float:
+        return max(0.7, self.target_following_distance_m - self.distance_tolerance_m)
+
+    @property
+    def safe_zone_max_m(self) -> float:
+        return self.target_following_distance_m + self.distance_tolerance_m
+
+    def set_target_following_distance(self, distance_m: float) -> bool:
+        """
+        Updates the target following distance setpoint [min_following_distance_m, max_following_distance_m].
+        Propagates setpoint to attached FollowController.
+        Preserves locked target ID, does not disrupt active detours, does not reset simulation.
+        """
+        try:
+            dist = float(distance_m)
+        except (TypeError, ValueError):
+            return False
+        if not (self.min_following_distance_m <= dist <= self.max_following_distance_m):
+            return False
+        self.target_following_distance_m = dist
+        if self.follow_controller and hasattr(self.follow_controller, "set_target_distance"):
+            self.follow_controller.set_target_distance(dist)
+        return True
+
+    def can_resume_movement(self) -> bool:
+        """Determines if the robot can safely resume autonomous motion."""
+        if self.follow_controller and self.follow_controller.emergency_stop_latched:
+            return False
+        if not self._is_comm_connected():
+            return False
+        if self.simulate_sensor_fail or (self.follow_controller and (self.follow_controller.ultrasonic_stale or not self.follow_controller.ultrasonic_valid)):
+            return False
+        if self.avoidance_state == AvoidanceState.BLOCKED:
+            return False
+        if self.simulated_obstacle_active or (self.follow_controller and self.follow_controller.obstacle_detected):
+            return False
+        return True
 
     def _is_comm_connected(self) -> bool:
         """Helper to safely query ESP32 comm connection status whether it's a property, method or transport."""
@@ -603,8 +654,13 @@ class SimulationArena:
             self.planned_path = []
             return False
 
-        # Pick the route with minimum distance to target
-        feasible_routes.sort(key=lambda r: r[2])
+        # Apply directional hysteresis to prevent left/right oscillation
+        def route_eval_cost(route):
+            side, path, dist = route
+            bias = -0.5 if (self.detour_direction != DetourDirection.NONE and side == self.detour_direction) else 0.0
+            return dist + bias
+
+        feasible_routes.sort(key=route_eval_cost)
         best_side, best_path, _ = feasible_routes[0]
 
         self.detour_direction = best_side
@@ -645,6 +701,8 @@ class SimulationArena:
 
         # Active Detour Navigation
         if self.navigation_mode == NavigationMode.OBSTACLE_AVOIDANCE and self.avoidance_state == AvoidanceState.NAVIGATING:
+            if getattr(self.robot, "linear_speed", 0.0) == 0.0 and getattr(self.robot, "current_cmd", "stop") == "stop":
+                return "DETOUR IN PROGRESS"
             return "NONE"
 
         # Level 6: Target Search
@@ -683,13 +741,35 @@ class SimulationArena:
         if getattr(self.robot, "current_cmd", "stop") == "stop" or self.last_decision in ("HOLD", "STOP") or getattr(self.robot, "linear_speed", 0.0) == 0.0:
             if target_person:
                 dist, _ = self.compute_relative_polar(target_person.x, target_person.y)
-                if dist <= 1.8:
+                if dist <= self.safe_zone_max_m:
                     return "HOLDING DISTANCE"
             if self.last_decision == "HOLD":
                 return "HOLDING DISTANCE"
             return "STOP"
 
         return "NONE"
+
+    def get_stop_code(self) -> str:
+        """Returns structured uppercase snake_case stop code for diagnostics and API."""
+        reason = self.get_stop_reason()
+        mapping = {
+            "E-STOP": "EMERGENCY_STOP",
+            "COMMUNICATION FAILURE": "COMMUNICATION_FAILURE",
+            "SENSOR STALE": "SENSOR_DATA_STALE",
+            "OBSTACLE": "BOTH_ROUTES_BLOCKED" if self.avoidance_state == AvoidanceState.BLOCKED else "OBSTACLE_BLOCKING_PATH",
+            "DETOUR IN PROGRESS": "DETOUR_IN_PROGRESS",
+            "TARGET SEARCH": "TARGET_SEARCH",
+            "TARGET NOT FOUND": "TARGET_NOT_FOUND",
+            "REACQUIRING TARGET": "REACQUIRING_TARGET",
+            "TARGET LOST": "TARGET_LOST",
+            "TARGET OUT OF VIEW": "TARGET_OUT_OF_VIEW",
+            "FOLLOW DISABLED": "FOLLOWING_DISABLED",
+            "OBSTACLE RECOVERY HOLD": "OBSTACLE_RECOVERY_HOLD",
+            "HOLDING DISTANCE": "TARGET_DISTANCE_REACHED",
+            "STOP": "STOP",
+            "NONE": "NONE"
+        }
+        return mapping.get(reason, reason.replace(" ", "_").upper())
 
     def compute_relative_polar(self, target_x: float, target_y: float) -> Tuple[float, float]:
         """Computes distance in meters and bearing in degrees relative to robot heading."""
@@ -1063,7 +1143,7 @@ class SimulationArena:
                     clear_path, _ = self.follow_controller.is_forward_path_clear()
 
                     # Align & approach logic for virtual demonstration
-                    if target_dist > 1.8:
+                    if target_dist > self.safe_zone_max_m:
                         if target_bearing < -12.0:
                             dispatched_cmd = "left"
                             dispatched_speed = 160
@@ -1080,12 +1160,12 @@ class SimulationArena:
                             dispatched_cmd = "stop"
                             dispatched_speed = 0
                             decision = "STOP"
-                    elif target_dist < 1.2:
+                    elif target_dist < self.safe_zone_min_m:
                         dispatched_cmd = "stop"
                         dispatched_speed = 0
                         decision = "HOLD"
                     else:
-                        # Inside safe following zone [1.2m - 1.8m]
+                        # Inside safe following zone [safe_zone_min_m - safe_zone_max_m]
                         if target_bearing < -15.0:
                             dispatched_cmd = "left"
                             dispatched_speed = 140
@@ -1126,15 +1206,33 @@ class SimulationArena:
     def get_state(self) -> Dict[str, Any]:
         """Returns comprehensive arena state for UI canvas rendering and live telemetry."""
         target_person = self.people.get(self.selected_target_id) if self.selected_target_id else None
+        stop_reason = self.get_stop_reason()
+        stop_code = self.get_stop_code()
+        
+        # Invariant check: if robot is stopped, stop_reason and stop_code must never be NONE
+        is_stopped = (getattr(self.robot, "linear_speed", 0.0) == 0.0 and getattr(self.robot, "angular_speed", 0.0) == 0.0) or getattr(self.robot, "current_cmd", "stop") == "stop"
+        if is_stopped and stop_reason == "NONE":
+            stop_reason = "HOLDING DISTANCE" if self.last_decision == "HOLD" else "STOP"
+            stop_code = "TARGET_DISTANCE_REACHED" if stop_reason == "HOLDING DISTANCE" else "STOP"
+
+        following_status = (
+            "HOLDING" if self.last_decision == "HOLD"
+            else "MOVING" if self.last_decision in ("MOVE_FORWARD", "TURN_LEFT", "TURN_RIGHT")
+            else "SEARCHING" if self.search_active
+            else "DETOURING" if self.avoidance_state in (AvoidanceState.NAVIGATING, AvoidanceState.REACQUIRING)
+            else "STOPPED"
+        )
+
         return {
             "arena": {
                 "width": self.arena_width,
                 "height": self.arena_height,
                 "camera_fov_deg": self.camera_fov_deg,
                 "camera_range_m": self.camera_range_m,
-                "target_following_distance_m": 1.5,
-                "safe_zone_min_m": 1.2,
-                "safe_zone_max_m": 1.8,
+                "target_following_distance_m": round(self.target_following_distance_m, 2),
+                "safe_zone_min_m": round(self.safe_zone_min_m, 2),
+                "safe_zone_max_m": round(self.safe_zone_max_m, 2),
+                "distance_tolerance_m": round(self.distance_tolerance_m, 2),
                 "obstacle_threshold_m": 0.30
             },
             "robot": self.robot.to_dict(),
@@ -1150,7 +1248,25 @@ class SimulationArena:
                 "simulated_sensor_fail": self.simulate_sensor_fail
             },
             "decision": self.last_decision,
-            "stop_reason": self.get_stop_reason(),
+            "stop_reason": stop_reason,
+            "stop_code": stop_code,
+            "following_status": following_status,
+            "diagnostics": {
+                "can_resume_movement": self.can_resume_movement(),
+                "target_in_camera_view": (self.selected_target_id in self.people and
+                                          self.last_distance_m <= self.camera_range_m and
+                                          abs(self.last_bearing_deg) <= (self.camera_fov_deg / 2.0)),
+                "target_in_range": (self.selected_target_id in self.people and
+                                    self.last_distance_m <= self.camera_range_m and
+                                    abs(self.last_bearing_deg) <= 90.0),
+                "path_clear": self.follow_controller.is_forward_path_clear()[0] if self.follow_controller else False,
+                "obstacle_active": self.simulated_obstacle_active,
+                "sensor_fail": self.simulate_sensor_fail,
+                "controller_enabled": self.follow_controller.enabled if self.follow_controller else False,
+                "controller_stopped": self.follow_controller.emergency_stop_latched if self.follow_controller else False,
+                "active_stop_reason": stop_reason,
+                "active_stop_code": stop_code,
+            },
             "search_active": self.search_active,
             "navigation_mode": self.navigation_mode,
             "avoidance_state": self.avoidance_state,
