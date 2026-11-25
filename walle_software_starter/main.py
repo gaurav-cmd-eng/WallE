@@ -4,6 +4,7 @@ import threading
 from typing import Optional, Dict, Any, List
 
 import cv2
+import numpy as np
 import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse
@@ -135,6 +136,14 @@ def get_sensor_status() -> Dict[str, Any]:
         "distance_cm": t.get("distance_cm") if t else None,
         "obstacle": bool(t.get("obstacle", False)) if t else False,
         "imu": {
+            "ax": imu_dict.get("ax", 0.0),
+            "ay": imu_dict.get("ay", 0.0),
+            "az": imu_dict.get("az", 0.0),
+            "gx": imu_dict.get("gx", 0.0),
+            "gy": imu_dict.get("gy", 0.0),
+            "gz": imu_dict.get("gz", 0.0),
+        },
+        "mpu6050": {
             "ax": imu_dict.get("ax", 0.0),
             "ay": imu_dict.get("ay", 0.0),
             "az": imu_dict.get("az", 0.0),
@@ -362,6 +371,7 @@ def home():
 def status():
     sync_esp32_telemetry()
     return {
+        "ok": True,
         **state,
         "emergency_stop_latched": follow_controller.emergency_stop_latched,
         "autonomous": autonomous_engine.get_status(),
@@ -1249,15 +1259,48 @@ def mjpeg_frames():
     frame_idx = 0
     while True:
         cap = get_camera()
+        ok = False
+        frame = None
 
-        if cap is None:
-            time.sleep(1)
-            continue
+        if cap is not None:
+            ok, frame = cap.read()
 
-        ok, frame = cap.read()
+        if not ok or frame is None:
+            state["camera"] = "standby (synthetic)"
+            frame_idx += 1
+            
+            # Synthetic 640x480 HUD canvas for standalone & headless operation
+            sim_frame = np.zeros((480, 640, 3), dtype=np.uint8)
+            sim_frame[:] = (20, 24, 30)
+            
+            # Grid lines
+            cv2.line(sim_frame, (320, 0), (320, 480), (35, 45, 55), 1)
+            cv2.line(sim_frame, (0, 240), (640, 240), (35, 45, 55), 1)
+            
+            # Header telemetry
+            cv2.putText(sim_frame, "WALL-E VISION FEED [SYNTHETIC STANDBY]", (15, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (64, 192, 87), 2)
+            cv2.putText(sim_frame, f"Detector: {person_detector.mode} | Target ID: #{follow_controller.selected_person_id or 'NONE'}", (15, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (116, 192, 252), 1)
+            cv2.putText(sim_frame, f"Follow State: {follow_controller.state} | Decision: {follow_controller.decision}", (15, 85), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 212, 59), 1)
 
-        if not ok:
-            state["camera"] = "camera read error"
+            # Render tracked people from person_tracker if any exist
+            tracked = follow_controller.person_tracker.get_tracked_people()
+            target = follow_controller.person_tracker.get_selected_target()
+            for p in tracked:
+                is_tgt = bool(target and target.id == p.id)
+                bx, by, bw, bh = p.bbox
+                color = (64, 192, 87) if is_tgt else (242, 189, 66)
+                cv2.rectangle(sim_frame, (bx, by), (bx + bw, by + bh), color, 2)
+                lbl = f"Person #{p.id} ({p.direction})" + (" [TARGET]" if is_tgt else "")
+                cv2.putText(sim_frame, lbl, (bx, max(15, by - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+
+            ok_enc, enc = cv2.imencode(".jpg", sim_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 75])
+            if ok_enc:
+                yield (
+                    b"--frame\r\n"
+                    b"Content-Type: image/jpeg\r\n\r\n"
+                    + enc.tobytes()
+                    + b"\r\n"
+                )
             time.sleep(0.1)
             continue
 

@@ -478,6 +478,7 @@ class PersonDetectorManager:
         active = self.get_active_detector()
         health = active.get_health()
         camera_conn = self.camera_checker() if callable(self.camera_checker) else False
+        health["mode"] = self.mode
         health["manager_mode"] = self.mode
         health["real_status"] = self.real_detector.status
         health["real_error"] = self.real_detector.error_message
