@@ -1,0 +1,2434 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WALL-E Control Center</title>
+<style>
+:root{font-family:Inter,system-ui,Arial,sans-serif;color:#f4f1e8;background:#101820}
+*{box-sizing:border-box}body{margin:0;padding:22px;background:radial-gradient(circle at top right,#263746,#101820 55%)}
+header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin:0 auto 20px;max-width:1100px}
+h1{margin:0;font-size:clamp(25px,4vw,38px);letter-spacing:1px}h1 span{color:#f2bd42}
+.pill{border:1px solid #52616b;border-radius:30px;padding:8px 13px;color:#cbd5dc;font-size:13px}
+main{max-width:1100px;margin:auto;display:grid;grid-template-columns:1.25fr 1fr;gap:16px}
+.panel{background:#1b2933;border:1px solid #354651;border-radius:17px;padding:17px;box-shadow:0 10px 28px #0003}
+h2{font-size:16px;margin:0 0 13px;color:#f2bd42;text-transform:uppercase;letter-spacing:1px}
+.camera{width:100%;aspect-ratio:16/9;background:#080d11;border-radius:12px;display:grid;place-items:center;overflow:hidden;color:#82919b}
+.camera img{width:100%;height:100%;object-fit:contain}
+.controls{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;max-width:330px;margin:auto}
+button{border:0;border-radius:11px;padding:14px 8px;background:#334956;color:#fff;font-weight:700;cursor:pointer}
+button:hover{filter:brightness(1.2)}button:active{transform:scale(.98)}
+.stop{background:#b83d3d}.gold{background:#d49b22;color:#18212a}.wide{grid-column:span 3}
+.camera-panel{grid-row:span 2;display:flex;flex-direction:column}
+.camera-panel .camera{flex:1;min-height:260px}
+.statusgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:9px}
+.stat{background:#111b22;border-radius:10px;padding:12px}.stat small{display:block;color:#91a0a9;margin-bottom:5px}.stat strong{font-size:14px}
+.note{font-size:12px;color:#9cabb4;line-height:1.5;margin:12px 0 0}
+#log{font-size:13px;color:#c5d1d7;min-height:20px;margin-top:12px}
+.full-width{grid-column:span 2}
+.panel-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:13px;flex-wrap:wrap;gap:10px}
+.panel-header h2{margin:0}
+.object-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px}
+.object-card{background:#111b22;border:1px solid #354651;border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.object-card-header{display:flex;justify-content:space-between;align-items:center}
+.object-title{font-size:13px;font-weight:700;color:#cbd5dc;text-transform:uppercase;letter-spacing:.5px}
+.color-badge{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;letter-spacing:.5px;padding:3px 9px;border-radius:20px;background:#18242e;border:1px solid #354651}
+.color-dot{width:8px;height:8px;border-radius:50%}
+.badge-red .color-dot{background:#ff4d4d;box-shadow:0 0 6px #ff4d4d88}
+.badge-orange .color-dot{background:#ff922b;box-shadow:0 0 6px #ff922b88}
+.badge-yellow .color-dot{background:#f2bd42;box-shadow:0 0 6px #f2bd4288}
+.badge-green .color-dot{background:#40c057;box-shadow:0 0 6px #40c05788}
+.badge-blue .color-dot{background:#339af0;box-shadow:0 0 6px #339af088}
+.badge-purple .color-dot{background:#b197fc;box-shadow:0 0 6px #b197fc88}
+.badge-unknown .color-dot{background:#82919b}
+.object-card-body{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.object-prop{background:#16222b;border-radius:8px;padding:8px}
+.object-prop small{display:block;color:#82919b;font-size:11px;margin-bottom:3px}
+.object-prop strong{font-size:13px;color:#f4f1e8}
+.full-prop{grid-column:span 2}
+.movement-tag{color:#f2bd42;font-size:12px;letter-spacing:.3px}
+.empty-state{background:#111b22;border:1px dashed #354651;border-radius:10px;padding:22px;text-align:center;color:#82919b;font-size:13px;grid-column:1/-1}
+.mode-btn{padding:7px 13px;border-radius:8px;background:#263746;color:#cbd5dc;font-size:12px;font-weight:700;cursor:pointer;border:1px solid #354651}
+.mode-btn:hover{filter:brightness(1.2)}
+.mode-btn.active{background:#d49b22;color:#18212a;border-color:#f2bd42}
+.follow-mode-content{display:none}
+.follow-mode-content.active{display:block}
+.tag-badge{display:inline-block;padding:3px 8px;border-radius:12px;font-size:11px;font-weight:700}
+.badge-ok{background:#184a28;color:#40c057;border:1px solid #2b8a3e}
+.badge-warn{background:#543809;color:#f2bd42;border:1px solid #d49b22}
+.badge-err{background:#521919;color:#ff6b6b;border:1px solid #c92a2a}
+@media(max-width:760px){.full-width{grid-column:span 1}.camera-panel{grid-row:span 1}main{grid-template-columns:1fr}body{padding:14px}}
+</style>
+</head>
+<body>
+<header>
+  <h1><span>WALL-E</span> CONTROL CENTER</h1>
+  <div class="pill" id="mode">CONNECTING…</div>
+</header>
+
+<!-- Dynamic Hardware & Simulation Status Banner -->
+<div id="hw-sim-banner" style="max-width:1100px;margin:0 auto 16px;background:#162430;border:1px solid #354651;border-radius:12px;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+    <span class="pill" id="hw-env-badge" style="font-weight:700;letter-spacing:0.5px;padding:4px 10px;font-size:11px;background:#543809;color:#f2bd42;border-color:#d49b22;">SAFE SIMULATION MODE</span>
+    <span style="font-size:13px;color:#cbd5dc;font-weight:600;">System Environment:</span>
+    <span id="hw-banner-summary" style="font-size:12px;color:#91a0a9;">Hardware disconnected. Safe mock environment active (no actuator actuation).</span>
+  </div>
+  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11px;">
+    <span id="badge-cam-hw" class="tag-badge badge-warn">CAM: VIRTUAL</span>
+    <span id="badge-yolo-hw" class="tag-badge badge-warn">YOLO: SIMULATION</span>
+    <span id="badge-esp-hw" class="tag-badge badge-warn">ESP32: MOCK</span>
+    <span id="badge-dist-hw" class="tag-badge badge-warn">DIST: UNAVAILABLE</span>
+  </div>
+</div>
+
+<main>
+  <section class="panel camera-panel">
+    <h2>Camera feed</h2>
+    <div class="camera"><img src="/video_feed" alt="Camera feed unavailable" onerror="this.style.display='none';this.parentElement.textContent='Camera not connected yet — connect USB webcam to the Pi.'"></div>
+    <p class="note">The live feed will appear when the USB webcam is connected and detected.</p>
+  </section>
+  <section class="panel">
+    <h2>Drive controls</h2>
+    <div class="controls">
+      <div></div><button onclick="drive('forward')">▲ FORWARD</button><div></div>
+      <button onclick="drive('left')">◀ LEFT</button>
+      <button class="stop" onclick="stopRobot()">■ STOP</button>
+      <button onclick="drive('right')">RIGHT ▶</button>
+      <div></div><button onclick="drive('backward')">▼ BACKWARD</button><div></div>
+    </div>
+    <div style="margin-top:10px;">
+      <button id="btn-drive-reset" onclick="resetSafetyLatch()" style="display:none;width:100%;background:#e58e26;color:#101820;padding:10px;font-weight:700;border-radius:8px;border:none;cursor:pointer;">
+        ⚠ RESET SAFETY LATCH
+      </button>
+    </div>
+    <p class="note">Controls currently run in simulation mode until an ESP32 address and motor firmware are configured.</p>
+  </section>
+  <section class="panel">
+    <h2>System status</h2>
+    <div class="statusgrid">
+      <div class="stat">
+        <small>Target ID</small>
+        <strong id="s-target-id">—</strong>
+      </div>
+      <div class="stat">
+        <small>Target direction</small>
+        <strong id="s-direction">NO TARGET</strong>
+      </div>
+      <div class="stat">
+        <small>Target coordinates</small>
+        <strong id="s-coords">—</strong>
+      </div>
+      <div class="stat">
+        <small>Target movement</small>
+        <strong id="s-target-movement">—</strong>
+      </div>
+      <div class="stat">
+        <small>Detected colour</small>
+        <strong id="s-color">NONE</strong>
+      </div>
+      <div class="stat"><small>Control mode</small><strong id="s-mode">—</strong></div>
+      <div class="stat"><small>Camera</small><strong id="s-camera">—</strong></div>
+      <div class="stat"><small>Drive</small><strong id="s-drive">—</strong></div>
+      <div class="stat"><small>Total objects</small><strong id="s-total-objects">0</strong></div>
+    </div>
+    <div id="log">Waiting for first command.</div>
+  </section>
+
+  <!-- STAGE 6: INTERACTIVE 2D VISUAL SIMULATION ARENA -->
+  <section class="panel full-width" style="border:2px solid #339af0;box-shadow:0 0 15px rgba(51,154,240,0.15);">
+    <div class="panel-header" style="border-bottom:1px solid #234055;padding-bottom:10px;">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <h2 style="color:#74c0fc;margin:0;">Interactive WALL-E Simulation Arena [Stage 6 Demonstration]</h2>
+        <span class="pill" style="border-color:#339af0;color:#74c0fc;background:#102838;font-weight:700;">LIVE 2D KINEMATIC SIMULATOR</span>
+        <span id="arena-sim-status-badge" class="tag-badge badge-ok">RUNNING (20 FPS)</span>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <button id="btn-arena-toggle" onclick="toggleArenaSim()" style="padding:7px 15px;font-size:12px;background:#244933;color:#40c057;border:1px solid #2b8a3e;border-radius:8px;font-weight:700;cursor:pointer;">
+          PAUSE SIM
+        </button>
+        <button onclick="resetArenaSim()" style="padding:7px 15px;font-size:12px;background:#3b2d54;color:#da77f2;border:1px solid #7048e8;border-radius:8px;font-weight:700;cursor:pointer;">
+          RESET SCENE
+        </button>
+        <button onclick="stopRobot()" style="padding:7px 15px;font-size:12px;background:#521919;color:#ff8787;border:1px solid #c92a2a;border-radius:8px;font-weight:700;cursor:pointer;">
+          EMERGENCY STOP
+        </button>
+      </div>
+    </div>
+
+    <!-- Arena Live Telemetry Header Grid -->
+    <div class="statusgrid" style="grid-template-columns:repeat(auto-fit, minmax(135px, 1fr));gap:8px;margin-top:10px;">
+      <div class="stat">
+        <small>Virtual Target Lock</small>
+        <strong id="arena-target-status" style="color:#40c057;">Person #1 (LOCKED)</strong>
+      </div>
+      <div class="stat">
+        <small>Robot Pose (X, Y, Heading)</small>
+        <strong id="arena-robot-pose">2.50m, 4.00m @ 0.0°</strong>
+      </div>
+      <div class="stat">
+        <small>Target Distance &amp; Bearing</small>
+        <strong id="arena-target-metrics" style="color:#74c0fc;">2.50m | 0.0°</strong>
+      </div>
+      <div class="stat">
+        <small>Following State</small>
+        <strong id="arena-follow-state" style="color:#ffd43b;">FOLLOWING</strong>
+      </div>
+      <div class="stat">
+        <small>Simulated Motor Drive</small>
+        <strong id="arena-motor-cmd" style="color:#40c057;">FORWARD (spd: 180)</strong>
+      </div>
+      <div class="stat">
+        <small>Ultrasonic Barrier</small>
+        <strong id="arena-sensor-dist">250.0 cm (CLEAR)</strong>
+      </div>
+      <div class="stat">
+        <small>ESP32 Mock Comm</small>
+        <strong id="arena-comm-status" style="color:#40c057;">CONNECTED (#0)</strong>
+      </div>
+      <div class="stat">
+        <small>Stop Reason</small>
+        <strong id="arena-stop-reason" style="color:#51cf66;">NONE</strong>
+      </div>
+      <div class="stat">
+        <small>Navigation Mode</small>
+        <strong id="arena-nav-mode" style="color:#74c0fc;">DIRECT_FOLLOW</strong>
+      </div>
+      <div class="stat">
+        <small>Avoidance State</small>
+        <strong id="arena-avoid-state" style="color:#40c057;">CLEAR</strong>
+      </div>
+      <div class="stat">
+        <small>Detour Direction</small>
+        <strong id="arena-detour-dir" style="color:#91a0a9;">NONE</strong>
+      </div>
+      <div class="stat">
+        <small>Search Progress</small>
+        <strong id="arena-search-progress" style="color:#91a0a9;">0° / 360°</strong>
+      </div>
+      <div class="stat">
+        <small>Target Reacquisition</small>
+        <strong id="arena-reacquire-status" style="color:#40c057;">ACQUIRED</strong>
+      </div>
+    </div>
+
+    <!-- 2D Canvas & Interactive Control Layout -->
+    <div style="display:flex;gap:14px;margin-top:14px;flex-wrap:wrap;">
+      <!-- Main Visual Canvas -->
+      <div style="flex:1 1 560px;min-width:320px;background:#091017;border:1px solid #234055;border-radius:10px;padding:10px;display:flex;flex-direction:column;align-items:center;">
+        <canvas id="arenaCanvas" width="760" height="520" style="width:100%;max-width:760px;background:#0d1822;border:1px solid #1a2f40;border-radius:8px;cursor:crosshair;"></canvas>
+        <div style="display:flex;justify-content:space-between;width:100%;margin-top:8px;font-size:11px;color:#91a0a9;">
+          <span>Arena Coordinates: 10m x 8m (Fixed 20Hz Timestep)</span>
+          <span>Click on canvas or use <kbd style="background:#1e3845;padding:2px 5px;border-radius:4px;color:#fff;">W A S D</kbd> / <kbd style="background:#1e3845;padding:2px 5px;border-radius:4px;color:#fff;">Arrows</kbd> to move person</span>
+        </div>
+      </div>
+
+      <!-- Simulation Arena Controls Panel -->
+      <div style="flex:0 0 310px;display:flex;flex-direction:column;gap:10px;">
+        <!-- Person Navigation Pad -->
+        <div style="background:#111b22;border:1px solid #2a3d4c;border-radius:10px;padding:12px;">
+          <div style="font-size:12px;font-weight:700;color:#cbd5dc;margin-bottom:8px;display:flex;justify-content:space-between;">
+            <span>PERSON MOVEMENT PAD</span>
+            <small style="color:#74c0fc;">WASD / Arrows</small>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:6px;max-width:180px;margin:0 auto 10px auto;">
+            <div></div>
+            <button onclick="manualMovePerson(0, -0.35)" style="padding:10px;background:#1e3845;color:#f4f1e8;border:none;border-radius:6px;font-weight:700;cursor:pointer;">▲</button>
+            <div></div>
+            <button onclick="manualMovePerson(-0.35, 0)" style="padding:10px;background:#1e3845;color:#f4f1e8;border:none;border-radius:6px;font-weight:700;cursor:pointer;">◀</button>
+            <button onclick="manualMovePerson(0, 0)" style="padding:10px;background:#244933;color:#40c057;border:none;border-radius:6px;font-weight:700;cursor:pointer;">●</button>
+            <button onclick="manualMovePerson(0.35, 0)" style="padding:10px;background:#1e3845;color:#f4f1e8;border:none;border-radius:6px;font-weight:700;cursor:pointer;">▶</button>
+            <div></div>
+            <button onclick="manualMovePerson(0, 0.35)" style="padding:10px;background:#1e3845;color:#f4f1e8;border:none;border-radius:6px;font-weight:700;cursor:pointer;">▼</button>
+            <div></div>
+          </div>
+          <div style="display:flex;gap:6px;justify-content:space-between;">
+            <button onclick="setPersonSpeed(0.5)" style="flex:1;padding:4px;background:#162530;color:#91a0a9;font-size:11px;border:1px solid #2a3d4c;border-radius:4px;cursor:pointer;">SLOW (0.5m/s)</button>
+            <button onclick="setPersonSpeed(1.0)" style="flex:1;padding:4px;background:#1e3845;color:#74c0fc;font-size:11px;border:1px solid #339af0;border-radius:4px;cursor:pointer;">NORM (1.0m/s)</button>
+            <button onclick="setPersonSpeed(1.8)" style="flex:1;padding:4px;background:#162530;color:#91a0a9;font-size:11px;border:1px solid #2a3d4c;border-radius:4px;cursor:pointer;">FAST (1.8m/s)</button>
+          </div>
+        </div>
+
+        <!-- Target Management Toolbar -->
+        <div style="background:#111b22;border:1px solid #2a3d4c;border-radius:10px;padding:12px;">
+          <div style="font-size:12px;font-weight:700;color:#cbd5dc;margin-bottom:8px;">TARGET &amp; CROWD CONTROLS</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
+            <button onclick="arenaAddPerson()" style="flex:1;padding:6px;background:#244933;color:#40c057;font-size:11px;border:none;border-radius:6px;font-weight:700;cursor:pointer;">+ ADD PERSON</button>
+            <button onclick="arenaRemoveTarget()" style="flex:1;padding:6px;background:#442828;color:#ff8787;font-size:11px;border:none;border-radius:6px;font-weight:700;cursor:pointer;">- REMOVE TARGET</button>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <button onclick="arenaSelectTarget(1)" style="flex:1;padding:5px;background:#1e3845;color:#74c0fc;font-size:11px;border:1px solid #339af0;border-radius:4px;cursor:pointer;">LOCK P1</button>
+            <button onclick="arenaSelectTarget(2)" style="flex:1;padding:5px;background:#162530;color:#91a0a9;font-size:11px;border:1px solid #2a3d4c;border-radius:4px;cursor:pointer;">LOCK P2</button>
+            <button onclick="arenaClearTarget()" style="flex:1;padding:5px;background:#162530;color:#91a0a9;font-size:11px;border:1px solid #2a3d4c;border-radius:4px;cursor:pointer;">AUTO</button>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">
+            <button onclick="arenaRepositionPersonAhead()" style="flex:1;padding:6px;background:#1e3845;color:#74c0fc;font-size:11px;border:1px solid #339af0;border-radius:6px;font-weight:700;cursor:pointer;">⟳ REPOSITION AHEAD</button>
+            <button onclick="arenaReacquireTarget()" style="flex:1;padding:6px;background:#2b3a4a;color:#ffd43b;font-size:11px;border:1px solid #fab005;border-radius:6px;font-weight:700;cursor:pointer;">🔍 REACQUIRE TARGET</button>
+          </div>
+        </div>
+
+        <!-- Autonomous Avoidance & 360 Search Panel (Stage 6B) -->
+        <div style="background:#111b22;border:1px solid #2a3d4c;border-radius:10px;padding:12px;">
+          <div style="font-size:12px;font-weight:700;color:#cbd5dc;margin-bottom:8px;display:flex;justify-content:space-between;">
+            <span>STAGE 6B: DETOUR &amp; 360° SEARCH</span>
+            <small id="arena-avoid-badge" style="color:#40c057;">AUTO-AVOID ON</small>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            <button id="btn-arena-auto-avoid" onclick="toggleArenaAutoAvoidance()" style="padding:6px 10px;background:#1e3845;color:#74c0fc;border:1px solid #339af0;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;">
+              AUTO AVOIDANCE: ENABLED
+            </button>
+            <div style="display:flex;gap:6px;">
+              <button id="btn-arena-search-start" onclick="arenaStart360Search()" style="flex:1;padding:6px 10px;background:#3b2d54;color:#da77f2;border:1px solid #7048e8;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;">
+                ▶ 360° SEARCH
+              </button>
+              <button id="btn-arena-search-cancel" onclick="arenaCancel360Search()" style="flex:1;padding:6px 10px;background:#442828;color:#ff8787;border:1px solid #7c3636;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;">
+                ✕ CANCEL
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Obstacle & Safety Controls -->
+        <div style="background:#111b22;border:1px solid #2a3d4c;border-radius:10px;padding:12px;">
+          <div style="font-size:12px;font-weight:700;color:#cbd5dc;margin-bottom:8px;">ENVIRONMENT &amp; FAILSAFES</div>
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            <button id="btn-arena-clear-obs" onclick="arenaClearAllObstacles()" style="padding:6px 10px;background:#244933;color:#40c057;border:1px solid #2b8a3e;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;">
+              CLEAR ALL OBSTACLES
+            </button>
+            <button id="btn-arena-toggle-obs" onclick="toggleArenaObstacleInFront()" style="padding:6px 10px;background:#442828;color:#ff8787;border:1px solid #7c3636;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;">
+              INJECT OBSTACLE IN FRONT (25cm)
+            </button>
+            <button id="btn-arena-sensor-fail" onclick="toggleArenaSensorFail()" style="padding:6px 10px;background:#49381e;color:#ffd43b;border:1px solid #997819;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;">
+              SIMULATE SENSOR FAILURE / STALE
+            </button>
+            <button id="btn-arena-esp32-drop" onclick="toggleArenaEsp32Drop()" style="padding:6px 10px;background:#35263a;color:#e599f7;border:1px solid #7048e8;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;">
+              SIMULATE ESP32 DISCONNECT
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel full-width">
+    <div class="panel-header">
+      <h2>Follow Control (Dual-Mode Autonomous)</h2>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <span class="pill" style="border-color:#d49b22;color:#f2bd42;">SIMULATION ONLY</span>
+        <button id="mode-btn-manual" class="mode-btn active" onclick="switchFollowMode('MANUAL')">MANUAL</button>
+        <button id="mode-btn-person" class="mode-btn" onclick="switchFollowMode('PERSON')">PERSON FOLLOW</button>
+        <button id="mode-btn-tag" class="mode-btn" onclick="switchFollowMode('POCKET_TAG')">POCKET TAG FOLLOW</button>
+        <button id="follow-toggle-btn" class="gold" onclick="toggleFollow()" style="padding:7px 15px;font-size:12px;">ENABLE FOLLOW</button>
+        <button id="btn-follow-reset" onclick="resetSafetyLatch()" style="display:none;padding:7px 15px;font-size:12px;background:#e58e26;color:#101820;font-weight:700;border:none;border-radius:8px;cursor:pointer;">⚠ RESET SAFETY LATCH</button>
+        <button class="stop" onclick="stopRobot()" style="padding:7px 15px;font-size:12px;">STOP ROBOT</button>
+      </div>
+    </div>
+
+    <!-- Emergency Stop Latch Warning Alert -->
+    <div id="safety-latch-alert" style="display:none;background:#521919;border:1px solid #c92a2a;border-radius:10px;padding:12px 16px;margin-bottom:14px;color:#ff8787;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span style="font-size:20px;">🛑</span>
+        <div>
+          <div style="font-weight:700;font-size:13px;letter-spacing:0.5px;">EMERGENCY STOP LATCHED — MOVEMENT INHIBITED</div>
+          <div style="font-size:12px;color:#ffa8a8;margin-top:2px;">Robot safety latch is active. Follow mode and driving are locked out until explicitly reset.</div>
+        </div>
+      </div>
+      <button onclick="resetSafetyLatch()" style="background:#f2bd42;color:#101820;font-weight:700;padding:8px 16px;border-radius:8px;font-size:12px;border:none;cursor:pointer;">
+        RESET SAFETY LATCH
+      </button>
+    </div>
+    
+    <div class="statusgrid" style="grid-template-columns:repeat(auto-fit, minmax(150px, 1fr));gap:10px;">
+      <div class="stat">
+        <small>Active Mode</small>
+        <strong id="s-follow-mode">MANUAL</strong>
+      </div>
+      <div class="stat">
+        <small>Follow State</small>
+        <strong id="s-follow-state">IDLE</strong>
+      </div>
+      <div class="stat">
+        <small>Target Distance</small>
+        <strong id="s-follow-target-dist">1.50 m (Initial)</strong>
+      </div>
+      <div class="stat">
+        <small>Current Decision</small>
+        <strong id="s-follow-decision" style="color:#f2bd42;">STOP</strong>
+      </div>
+      <div class="stat">
+        <small>Active Target</small>
+        <strong id="s-follow-active-target">NONE</strong>
+      </div>
+      <div class="stat">
+        <small>Simulated Motor Command</small>
+        <strong id="s-follow-sim-cmd">STOP (speed: 0) [SIM]</strong>
+      </div>
+      <div class="stat">
+        <small>Obstacle Guard</small>
+        <strong id="s-follow-obstacle"><span class="tag-badge badge-ok">CLEAR</span></strong>
+      </div>
+    </div>
+
+    <!-- Obstacle Safety & Simulation Bar -->
+    <div style="background:#162430;border:1px solid #354651;border-radius:10px;padding:12px;margin-top:14px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <span style="font-size:12px;color:#91a0a9;font-weight:700;">OBSTACLE GUARD:</span>
+        <span id="obstacle-status-badge" class="tag-badge badge-ok">CLEAR</span>
+        <span id="obstacle-info" style="font-size:12px;color:#cbd5dc;">Perimeter clear (Software safety simulation active)</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span style="font-size:11px;color:#f2bd42;">[SOFTWARE SIMULATION ONLY]:</span>
+        <button id="btn-sim-obstacle" onclick="toggleSimObstacle()" style="padding:6px 12px;background:#492424;color:#ff8787;font-size:12px;font-weight:700;border:none;border-radius:8px;cursor:pointer;">
+          SIMULATE OBSTACLE
+        </button>
+        <button onclick="clearSimObstacle()" style="padding:6px 12px;background:#244933;color:#40c057;font-size:12px;font-weight:700;border:none;border-radius:8px;cursor:pointer;">
+          CLEAR OBSTACLE
+        </button>
+      </div>
+    </div>
+
+    <!-- 1. MANUAL MODE VIEW -->
+    <div id="follow-view-manual" class="follow-mode-content active" style="margin-top:14px;background:#111b22;border:1px dashed #354651;border-radius:10px;padding:16px;">
+      <div style="color:#9cabb4;font-size:13px;">
+        <strong>Manual Control Active:</strong> Autonomous following is disabled. Drive WALL-E using the manual Drive Controls above.
+      </div>
+    </div>
+
+    <!-- 2. PERSON FOLLOW VIEW -->
+    <div id="follow-view-person" class="follow-mode-content" style="margin-top:14px;">
+      <!-- Detector Status & Performance Bar -->
+      <div style="background:#111b22;border:1px solid #354651;border-radius:10px;padding:12px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+          <span style="font-size:12px;color:#91a0a9;font-weight:700;">DETECTOR:</span>
+          <span id="det-status-badge" class="tag-badge badge-warn">UNAVAILABLE</span>
+          <span id="det-perf-stats" style="font-size:12px;color:#cbd5dc;">0.0 ms | 0.0 FPS</span>
+          <span id="s-person-reacq-badge" class="tag-badge badge-warn">STATUS: IDLE</span>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <button id="det-mode-real" class="mode-btn" onclick="setDetectorMode('REAL')">REAL CV</button>
+          <button id="det-mode-sim" class="mode-btn" onclick="setDetectorMode('SIMULATION')">MOCK SIM</button>
+          <button onclick="runBenchmark()" style="padding:6px 11px;background:#334956;font-size:11px;">BENCHMARK CPU</button>
+        </div>
+      </div>
+
+      <!-- Target Selection & Ranging Status -->
+      <div style="background:#162430;border:1px solid #354651;border-radius:10px;padding:12px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+        <div>
+          <small style="color:#9cabb4;display:block;">Safety Ranging Status:</small>
+          <strong style="color:#f2bd42;font-size:13px;" id="s-person-dist-status">Distance: UNAVAILABLE (Awaiting Calibrated Range Sensor - Forward Approach Prohibited)</strong>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <small style="color:#91a0a9;">Target Person:</small>
+          <input type="number" id="person-target-input" placeholder="ID (e.g. 1)" style="background:#111b22;border:1px solid #354651;border-radius:8px;padding:6px 10px;color:#f4f1e8;width:100px;font-size:13px;" />
+          <button onclick="setPersonTarget()" style="padding:6px 12px;background:#334956;font-size:12px;">LOCK ID</button>
+          <button onclick="setPersonTargetAuto()" style="padding:6px 12px;background:#263746;font-size:12px;">AUTO</button>
+          <button onclick="clearPersonTarget()" style="padding:6px 12px;background:#263746;font-size:12px;">CLEAR</button>
+        </div>
+      </div>
+
+      <!-- Stage 5 E2E Person Simulation Toolbar -->
+      <div style="background:#131f28;border:1px dashed #3f5564;border-radius:8px;padding:10px 12px;margin-bottom:12px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+        <span style="font-size:11px;font-weight:700;color:#f2bd42;letter-spacing:0.04em;">SIMULATION TOOLBAR [STAGE 5]:</span>
+        <button onclick="injectSimPreset('MULTIPLE')" style="padding:5px 9px;background:#244933;color:#40c057;font-size:11px;">+ 3 PEOPLE (L/C/R)</button>
+        <button onclick="injectSimPreset('LEFT')" style="padding:5px 9px;background:#1e3845;color:#4dabf7;font-size:11px;">POS: LEFT</button>
+        <button onclick="injectSimPreset('CENTER')" style="padding:5px 9px;background:#1e3845;color:#4dabf7;font-size:11px;">POS: CENTER</button>
+        <button onclick="injectSimPreset('RIGHT')" style="padding:5px 9px;background:#1e3845;color:#4dabf7;font-size:11px;">POS: RIGHT</button>
+        <button onclick="injectSimPreset('CLEAR')" style="padding:5px 9px;background:#442828;color:#ff8787;font-size:11px;">CLEAR PEOPLE</button>
+        <button onclick="runPersonScenario('all')" style="padding:5px 11px;background:#3b2d54;color:#da77f2;border:1px solid #7048e8;font-size:11px;margin-left:auto;">RUN 13-STEP E2E SUITE</button>
+      </div>
+
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <span style="font-size:13px;color:#cbd5dc;font-weight:700;">Detected People (<span id="person-count-val">0</span>):</span>
+        <small style="color:#82919b;">Click 'SELECT TARGET' on any detected person card to lock</small>
+      </div>
+
+      <div id="follow-person-list" class="object-grid">
+        <div class="empty-state">No people currently detected by vision interface</div>
+      </div>
+    </div>
+
+    <!-- 3. POCKET TAG FOLLOW VIEW -->
+    <div id="follow-view-tag" class="follow-mode-content" style="margin-top:14px;">
+      <div style="display:flex;gap:12px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">
+        <span style="font-size:13px;color:#cbd5dc;font-weight:700;">Radio Source:</span>
+        <button id="tag-source-uwb" class="mode-btn active" onclick="setTagSource('UWB')">UWB (Metric Ranging)</button>
+        <button id="tag-source-ble" class="mode-btn" onclick="setTagSource('BLE')">BLE (Proximity RSSI)</button>
+        <span class="note" style="margin:0 0 0 auto;">Direction is maintained separately from single-receiver radio distance.</span>
+      </div>
+      <div class="statusgrid" style="grid-template-columns:repeat(auto-fit, minmax(140px, 1fr));gap:10px;">
+        <div class="stat">
+          <small>Radio Connection</small>
+          <strong id="s-tag-conn"><span class="tag-badge badge-err">DISCONNECTED</span></strong>
+        </div>
+        <div class="stat">
+          <small>Reading Validity</small>
+          <strong id="s-tag-valid"><span class="tag-badge badge-warn">INVALID / STALE</span></strong>
+        </div>
+        <div class="stat">
+          <small>Measured Distance</small>
+          <strong id="s-tag-dist">—</strong>
+        </div>
+        <div class="stat">
+          <small>Signal Quality / RSSI</small>
+          <strong id="s-tag-quality">—</strong>
+        </div>
+        <div class="stat">
+          <small>Assisted Direction</small>
+          <strong id="s-tag-direction">UNKNOWN</strong>
+        </div>
+        <div class="stat">
+          <small>Last Update</small>
+          <strong id="s-tag-age">—</strong>
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap;">
+        <small style="color:#91a0a9;">Tag ID Lock:</small>
+        <input type="text" id="tag-target-input" placeholder="e.g. TAG_01" style="background:#111b22;border:1px solid #354651;border-radius:8px;padding:6px 10px;color:#f4f1e8;width:130px;font-size:13px;" />
+        <button onclick="setTagTarget()" style="padding:6px 12px;background:#334956;font-size:12px;">LOCK TAG</button>
+        <button onclick="clearTagTarget()" style="padding:6px 12px;background:#263746;font-size:12px;">ANY TAG</button>
+        <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;">
+          <button onclick="injectSimTag(1.5, 'CENTER', true)" style="padding:6px 10px;background:#244933;color:#40c057;font-size:11px;">SIM 1.5m (HOLD)</button>
+          <button onclick="injectSimTag(2.5, 'CENTER', true)" style="padding:6px 10px;background:#243e49;color:#339af0;font-size:11px;">SIM 2.5m (APPROACH)</button>
+          <button onclick="injectSimTag(0.5, 'CENTER', true)" style="padding:6px 10px;background:#492424;color:#ff6b6b;font-size:11px;">SIM 0.5m (OBSTACLE)</button>
+          <button onclick="injectSimTag(1.5, 'CENTER', false)" style="padding:6px 10px;background:#332924;color:#ff922b;font-size:11px;">SIM DISCONNECT</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ESP32 Serial & Communication Layer Panel -->
+  <section class="panel full-width">
+    <div class="panel-header">
+      <h2>ESP32 Serial & Communication Layer</h2>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <span id="esp32-mode-badge" class="tag-badge badge-warn">MOCK SERIAL TRANSPORT</span>
+        <span id="esp32-conn-badge" class="tag-badge badge-ok">CONNECTED</span>
+      </div>
+    </div>
+    <div class="statusgrid" style="grid-template-columns:repeat(auto-fit, minmax(160px, 1fr));gap:10px;">
+      <div class="stat">
+        <small>Transport Status</small>
+        <strong id="esp32-transport-status">CONNECTED (Mock)</strong>
+      </div>
+      <div class="stat">
+        <small>Hardware Type</small>
+        <strong id="esp32-hw-type" style="color:#f2bd42;">In-Memory Mock Serial</strong>
+      </div>
+      <div class="stat">
+        <small>Packet Sequence (seq)</small>
+        <strong id="esp32-seq">#0</strong>
+      </div>
+      <div class="stat">
+        <small>Watchdog Timeout</small>
+        <strong id="esp32-watchdog">1.0 s</strong>
+      </div>
+      <div class="stat">
+        <small>Current Comm State</small>
+        <strong id="esp32-state">STOPPED</strong>
+      </div>
+      <div class="stat">
+        <small>Last Comm Error</small>
+        <strong id="esp32-error" style="color:#40c057;">None</strong>
+      </div>
+    </div>
+    <div style="background:#131f28;border:1px dashed #3f5564;border-radius:8px;padding:8px 12px;margin-top:10px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+      <span style="font-size:11px;color:#91a0a9;">Comm Failsafe Simulation:</span>
+      <button id="btn-toggle-esp32-disconnect" onclick="toggleEsp32SimDisconnect()" style="padding:5px 10px;background:#442828;color:#ff8787;font-size:11px;border:1px solid #7c3636;">TOGGLE SIM DISCONNECT</button>
+    </div>
+    <p class="note" id="esp32-note" style="margin-top:10px;">
+      Mock serial transport active. Motor commands are parsed and acknowledged in software without physical serial pin transmission.
+    </p>
+  </section>
+
+  <!-- Physical Sensor Telemetry Panel (HC-SR04 & MPU6050) -->
+  <section class="panel full-width">
+    <div class="panel-header">
+      <h2>Physical Sensor Telemetry (HC-SR04 & MPU6050)</h2>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <span id="sensor-freshness-badge" class="tag-badge badge-warn">WAITING FOR TELEMETRY</span>
+        <span id="sensor-obstacle-badge" class="tag-badge badge-ok">PATH CLEAR</span>
+      </div>
+    </div>
+    <div class="statusgrid" style="grid-template-columns:repeat(auto-fit, minmax(160px, 1fr));gap:10px;">
+      <div class="stat">
+        <small>Ultrasonic Distance</small>
+        <strong id="sensor-distance-cm">—</strong>
+      </div>
+      <div class="stat">
+        <small>Obstacle State</small>
+        <strong id="sensor-obstacle-state" style="color:#40c057;">CLEAR (&gt; 30.0 cm)</strong>
+      </div>
+      <div class="stat">
+        <small>MPU6050 Accel (ax, ay, az)</small>
+        <strong id="sensor-accel" style="font-size:12px;">0.00, 0.00, 0.00 m/s²</strong>
+      </div>
+      <div class="stat">
+        <small>MPU6050 Gyro (gx, gy, gz)</small>
+        <strong id="sensor-gyro" style="font-size:12px;">0.00, 0.00, 0.00 °/s</strong>
+      </div>
+      <div class="stat">
+        <small>Sensor Validity &amp; Freshness</small>
+        <strong id="sensor-freshness" style="color:#f2bd42;">No data</strong>
+      </div>
+      <div class="stat">
+        <small>Sensor Comm Errors</small>
+        <strong id="sensor-error" style="color:#40c057;">None</strong>
+      </div>
+    </div>
+    <div style="background:#131f28;border:1px dashed #3f5564;border-radius:8px;padding:8px 12px;margin-top:10px;display:flex;align-items:center;flex-wrap:wrap;gap:8px;">
+      <span style="font-size:11px;font-weight:700;color:#f2bd42;">SIMULATE SENSOR CONDITIONS:</span>
+      <button onclick="injectSimSensor(85.0, false, false, true)" style="padding:5px 9px;background:#244933;color:#40c057;font-size:11px;">PATH CLEAR (85cm)</button>
+      <button onclick="injectSimSensor(18.0, true, false, true)" style="padding:5px 9px;background:#442828;color:#ff8787;font-size:11px;">OBSTACLE (18cm)</button>
+      <button onclick="injectSimSensor(85.0, false, true, true)" style="padding:5px 9px;background:#49381e;color:#ffd43b;font-size:11px;">STALE TELEMETRY</button>
+      <button onclick="injectSimSensor(null, false, true, false)" style="padding:5px 9px;background:#35263a;color:#e599f7;font-size:11px;">SENSOR DISCONNECTED</button>
+    </div>
+    <p class="note" id="sensor-note" style="margin-top:10px;">
+      HC-SR04 ultrasonic distance and MPU6050 6-DoF IMU telemetry streaming from ESP32 at 10 Hz over serial JSON.
+    </p>
+  </section>
+
+  <section class="panel full-width">
+    <div class="panel-header">
+      <h2>Autonomous Decision Engine</h2>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <span class="pill" id="auto-sim-badge" style="border-color:#d49b22;color:#f2bd42;">SIMULATION MODE</span>
+        <button id="auto-toggle-btn" class="gold" onclick="toggleAutonomous()" style="padding:7px 15px;font-size:12px;">ENABLE AUTO</button>
+        <button class="stop" onclick="autonomousOverride()" style="padding:7px 15px;font-size:12px;">MANUAL OVERRIDE (STOP)</button>
+      </div>
+    </div>
+    <div class="statusgrid" style="grid-template-columns:repeat(auto-fit, minmax(160px, 1fr));gap:10px;">
+      <div class="stat">
+        <small>Autonomous Mode</small>
+        <strong id="auto-mode-status">DISABLED</strong>
+      </div>
+      <div class="stat">
+        <small>Current Decision</small>
+        <strong id="auto-decision" style="color:#f2bd42;">STOP</strong>
+      </div>
+      <div class="stat">
+        <small>Target Tracking ID</small>
+        <strong id="auto-target-id">AUTO (NONE)</strong>
+      </div>
+      <div class="stat">
+        <small>Target Position</small>
+        <strong id="auto-target-pos">—</strong>
+      </div>
+      <div class="stat">
+        <small>Engine State</small>
+        <strong id="auto-state">DISABLED</strong>
+      </div>
+      <div class="stat">
+        <small>Simulated Motor Status</small>
+        <strong id="auto-motor-cmd">STOP (speed: 0)</strong>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;margin-top:14px;flex-wrap:wrap;">
+      <small style="color:#91a0a9;">Target Selection:</small>
+      <input type="number" id="target-id-input" placeholder="Enter ID (e.g. 1)" style="background:#111b22;border:1px solid #354651;border-radius:8px;padding:6px 10px;color:#f4f1e8;width:150px;font-size:13px;" />
+      <button onclick="setTargetId()" style="padding:7px 12px;background:#334956;font-size:12px;">LOCK ID</button>
+      <button onclick="clearTargetId()" style="padding:7px 12px;background:#263746;font-size:12px;">AUTO SELECT</button>
+      <span class="note" style="margin:0 0 0 auto;">Simulated motor commands are logged without activating physical hardware.</span>
+    </div>
+  </section>
+
+  <section class="panel full-width">
+    <div class="panel-header">
+      <h2>Detected objects</h2>
+      <div class="pill">Objects: <strong id="s-object-count">0</strong></div>
+    </div>
+    <div id="s-object-list" class="object-grid">
+      <div class="empty-state">No objects detected</div>
+    </div>
+  </section>
+</main>
+<script>
+let autoEnabled = false;
+let followEnabled = false;
+let currentFollowMode = 'MANUAL';
+let activeTagSource = 'UWB';
+let emergencyStopLatched = false;
+let obstacleDetected = false;
+
+function setLog(msg, isError = false) {
+  const el = document.getElementById('log');
+  if (!el) return;
+  el.textContent = msg;
+  el.style.color = isError ? '#ff8787' : '#c5d1d7';
+}
+
+async function post(url, body={}) {
+  try {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || 'Request failed');
+    setLog(data.mode === 'simulation'
+      ? 'Simulation: command received — ' + (body.direction || body.mode || 'stop')
+      : 'Command processed.');
+    refresh();
+  } catch(e) {
+    setLog('Error: ' + e.message, true);
+  }
+}
+
+function drive(direction) {
+  if (emergencyStopLatched) {
+    setLog('Drive inhibited: Emergency STOP latch is active. Reset safety latch first.', true);
+    return;
+  }
+  if (followEnabled) {
+    setLog('Notice: Autonomous follow is currently enabled. Manual drive command dispatched.');
+  }
+  post('/api/drive', { direction, speed: 150 });
+}
+
+function stopRobot() {
+  post('/api/stop');
+}
+
+async function resetSafetyLatch() {
+  try {
+    const res = await fetch('/api/follow/emergency_stop/reset', { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to reset safety latch');
+    setLog('Emergency stop latch reset. Robot is in IDLE state. Target acquisition and follow must be explicitly activated.');
+    refresh();
+  } catch(e) {
+    setLog('Failed to reset safety latch: ' + e.message, true);
+  }
+}
+
+async function toggleSimObstacle() {
+  const next = !obstacleDetected;
+  try {
+    const res = await fetch(`/api/follow/obstacle?detected=${next}`, { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to update simulated obstacle');
+    setLog(next
+      ? 'Software-simulated obstacle INJECTED. Safety stop priority engaged.'
+      : 'Software-simulated obstacle CLEARED.');
+    refresh();
+  } catch(e) {
+    setLog('Obstacle simulation error: ' + e.message, true);
+  }
+}
+
+async function clearSimObstacle() {
+  try {
+    const res = await fetch('/api/follow/obstacle?detected=false', { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to clear obstacle');
+    setLog('Software-simulated obstacle CLEARED.');
+    refresh();
+  } catch(e) {
+    setLog('Obstacle clear error: ' + e.message, true);
+  }
+}
+
+// Autonomous Decision Engine handlers
+async function toggleAutonomous() {
+  try {
+    const res = await fetch('/api/autonomous/enable', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: !autoEnabled })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to toggle autonomous mode');
+    document.getElementById('log').textContent = autoEnabled ? 'Autonomous mode disabled.' : 'Autonomous mode enabled.';
+    refresh();
+  } catch(e) {
+    document.getElementById('log').textContent = 'Error: ' + e.message;
+  }
+}
+
+async function autonomousOverride() {
+  try {
+    const res = await fetch('/api/autonomous/override', { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Override failed');
+    document.getElementById('log').textContent = 'Manual override engaged: STOP.';
+    refresh();
+  } catch(e) {
+    document.getElementById('log').textContent = 'Error: ' + e.message;
+  }
+}
+
+async function setTargetId() {
+  const val = document.getElementById('target-id-input').value.trim();
+  const targetId = val ? parseInt(val, 10) : null;
+  if (val && isNaN(targetId)) return;
+  try {
+    const res = await fetch('/api/autonomous/target', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target_id: targetId })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to set target');
+    document.getElementById('log').textContent = targetId !== null ? `Locked target ID #${targetId}.` : 'Target set to auto.';
+    refresh();
+  } catch(e) {
+    document.getElementById('log').textContent = 'Error: ' + e.message;
+  }
+}
+
+async function clearTargetId() {
+  document.getElementById('target-id-input').value = '';
+  try {
+    const res = await fetch('/api/autonomous/target', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target_id: null })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to set auto target');
+    document.getElementById('log').textContent = 'Target set to auto selection.';
+    refresh();
+  } catch(e) {
+    document.getElementById('log').textContent = 'Error: ' + e.message;
+  }
+}
+
+// Dual-Mode Follow Control handlers
+async function switchFollowMode(mode) {
+  try {
+    const res = await fetch('/api/follow/mode', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to switch follow mode');
+    document.getElementById('log').textContent = `Switched follow mode to ${mode}.`;
+    refresh();
+  } catch(e) {
+    document.getElementById('log').textContent = 'Error: ' + e.message;
+  }
+}
+
+async function toggleFollow() {
+  if (emergencyStopLatched) {
+    setLog('Cannot enable following: Emergency STOP latch is active. Click RESET SAFETY LATCH first.', true);
+    return;
+  }
+  if (!followEnabled && currentFollowMode === 'MANUAL') {
+    setLog('Select PERSON FOLLOW or POCKET TAG FOLLOW before enabling autonomous follow.', true);
+    return;
+  }
+  try {
+    const res = await fetch('/api/follow/enable', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: !followEnabled })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to toggle follow');
+    setLog(followEnabled ? 'Autonomous follow disabled.' : 'Autonomous follow enabled.');
+    refresh();
+  } catch(e) {
+    setLog('Error: ' + e.message, true);
+  }
+}
+
+async function setPersonTarget() {
+  const val = document.getElementById('person-target-input').value.trim();
+  const personId = val ? parseInt(val, 10) : null;
+  if (val && isNaN(personId)) return;
+  try {
+    const res = await fetch('/api/follow/target/person', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ person_id: personId })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to set person target');
+    document.getElementById('log').textContent = personId !== null ? `Locked person ID #${personId}.` : 'Person auto-selection set.';
+    refresh();
+  } catch(e) {
+    document.getElementById('log').textContent = 'Error: ' + e.message;
+  }
+}
+
+async function clearPersonTarget() {
+  document.getElementById('person-target-input').value = '';
+  try {
+    const res = await fetch('/api/person/target/clear', { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to clear person target');
+    document.getElementById('log').textContent = 'Person target reset to auto-selection.';
+    refresh();
+  } catch(e) {
+    document.getElementById('log').textContent = 'Error: ' + e.message;
+  }
+}
+
+async function setPersonTargetAuto() {
+  document.getElementById('person-target-input').value = '';
+  try {
+    const res = await fetch('/api/person/target/auto', { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to set auto target');
+    document.getElementById('log').textContent = 'Person target set to automatic selection.';
+    refresh();
+  } catch(e) {
+    document.getElementById('log').textContent = 'Error: ' + e.message;
+  }
+}
+
+async function selectSpecificPerson(personId) {
+  try {
+    const res = await fetch('/api/follow/target/person', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ person_id: personId })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to select target');
+    document.getElementById('log').textContent = `Target locked to Person #${personId}.`;
+    refresh();
+  } catch(e) {
+    document.getElementById('log').textContent = 'Error: ' + e.message;
+  }
+}
+
+async function setDetectorMode(mode) {
+  try {
+    const res = await fetch('/api/person/detector/mode', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to set detector mode');
+    document.getElementById('log').textContent = `Person detector mode set to ${mode}.`;
+    refresh();
+  } catch(e) {
+    document.getElementById('log').textContent = 'Error: ' + e.message;
+  }
+}
+
+async function runBenchmark() {
+  document.getElementById('log').textContent = 'Running CPU inference benchmark (10 iterations)...';
+  try {
+    const res = await fetch('/api/person/detector/benchmark', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ iterations: 10 })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Benchmark failed');
+    const b = data.benchmark;
+    document.getElementById('log').textContent = `Benchmark [${b.status}]: Avg ${b.avg_latency_ms}ms | Achievable ${b.achievable_fps} FPS on CPU.`;
+    refresh();
+  } catch(e) {
+    document.getElementById('log').textContent = 'Benchmark error: ' + e.message;
+  }
+}
+
+async function setTagSource(source) {
+  activeTagSource = source;
+  try {
+    const res = await fetch('/api/follow/tag/source', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to set tag source');
+    document.getElementById('log').textContent = `Tag radio source set to ${source}.`;
+    refresh();
+  } catch(e) {
+    document.getElementById('log').textContent = 'Error: ' + e.message;
+  }
+}
+
+async function setTagTarget() {
+  const val = document.getElementById('tag-target-input').value.trim();
+  try {
+    const res = await fetch('/api/follow/target/tag', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tag_id: val || null, source: activeTagSource })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to set tag target');
+    document.getElementById('log').textContent = val ? `Locked tag ID '${val}'.` : 'Tag target set to any.';
+    refresh();
+  } catch(e) {
+    document.getElementById('log').textContent = 'Error: ' + e.message;
+  }
+}
+
+async function clearTagTarget() {
+  document.getElementById('tag-target-input').value = '';
+  try {
+    const res = await fetch('/api/follow/target/tag', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tag_id: null, source: activeTagSource })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to reset tag target');
+    document.getElementById('log').textContent = 'Tag target reset to any tag.';
+    refresh();
+  } catch(e) {
+    document.getElementById('log').textContent = 'Error: ' + e.message;
+  }
+}
+
+async function injectSimPerson() {
+  try {
+    const res = await fetch('/api/follow/sim/person', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        person_id: 1,
+        bbox: [220, 80, 160, 320],
+        confidence: 0.94,
+        direction: "CENTER"
+      })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to inject sim person');
+    document.getElementById('log').textContent = 'Simulated person detected at center (conf: 94%).';
+    refresh();
+  } catch(e) {
+    document.getElementById('log').textContent = 'Error: ' + e.message;
+  }
+}
+
+// Stage 5 Simulation Handlers
+async function injectSimPreset(preset) {
+  try {
+    const res = await fetch(`/api/follow/sim/person/preset?preset=${preset}`, { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to inject preset');
+    document.getElementById('log').textContent = `[SIMULATION] Preset '${preset}' injected (${data.count} people).`;
+    refresh();
+  } catch(e) {
+    document.getElementById('log').textContent = 'Preset error: ' + e.message;
+  }
+}
+
+async function runPersonScenario(scenarioKey) {
+  document.getElementById('log').textContent = `[SIMULATION] Running E2E scenarios (${scenarioKey})...`;
+  try {
+    const res = await fetch('/api/follow/person/scenario', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scenario: scenarioKey })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to run scenario');
+    if (data.total !== undefined) {
+      document.getElementById('log').textContent = `[SIMULATION] Executed ${data.total} scenarios: ${data.passed} passed, ${data.failed} failed. All safety invariants verified.`;
+    } else {
+      document.getElementById('log').textContent = `[SIMULATION] Scenario '${scenarioKey}' finished with result: ${data.result}.`;
+    }
+    refresh();
+  } catch(e) {
+    document.getElementById('log').textContent = 'Scenario error: ' + e.message;
+  }
+}
+
+async function injectSimSensor(distanceCm, obstacle, isStale, isValid) {
+  try {
+    const res = await fetch('/api/sensors/sim', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        distance_cm: distanceCm,
+        obstacle: obstacle,
+        is_stale: isStale,
+        is_valid: isValid,
+        accel: [0.0, 0.0, 9.81],
+        gyro: [0.0, 0.0, 0.0]
+      })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to inject simulated sensor data');
+    document.getElementById('log').textContent = `[SIMULATION] Injected sensor state: ${distanceCm !== null ? distanceCm + 'cm' : 'None'}, obstacle=${obstacle}, stale=${isStale}, valid=${isValid}.`;
+    refresh();
+  } catch(e) {
+    document.getElementById('log').textContent = 'Sensor sim error: ' + e.message;
+  }
+}
+
+let esp32SimDisconnected = false;
+async function toggleEsp32SimDisconnect() {
+  esp32SimDisconnected = !esp32SimDisconnected;
+  try {
+    const res = await fetch('/api/esp32/simulate_disconnect', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ disconnect: esp32SimDisconnected })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to toggle disconnect');
+    const btn = document.getElementById('btn-toggle-esp32-disconnect');
+    if (btn) {
+      btn.textContent = esp32SimDisconnected ? 'RESTORE SIM CONNECTION' : 'TOGGLE SIM DISCONNECT';
+      btn.style.background = esp32SimDisconnected ? '#244933' : '#442828';
+      btn.style.color = esp32SimDisconnected ? '#40c057' : '#ff8787';
+    }
+    document.getElementById('log').textContent = `[SIMULATION] ESP32 connection state set to: ${esp32SimDisconnected ? 'DISCONNECTED (Mock)' : 'CONNECTED (Mock)'}.`;
+    refresh();
+  } catch(e) {
+    document.getElementById('log').textContent = 'ESP32 sim error: ' + e.message;
+  }
+}
+
+async function injectSimTag(dist, dir, connected) {
+  try {
+    const res = await fetch('/api/follow/sim/tag', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        tag_id: 'TAG_01',
+        source: activeTagSource,
+        distance_m: dist,
+        direction: dir,
+        connected: connected
+      })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to inject sim tag');
+    document.getElementById('log').textContent = connected ? `Simulated ${activeTagSource} tag at ${dist}m (${dir}).` : 'Simulated tag disconnect.';
+    refresh();
+  } catch(e) {
+    document.getElementById('log').textContent = 'Error: ' + e.message;
+  }
+}
+
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+async function refresh(){
+  try{
+    const res = await fetch('/api/status');
+    if (!res.ok) return;
+    const s = await res.json();
+
+    if (s.mode) {
+      document.getElementById('mode').textContent = s.mode.toUpperCase();
+      document.getElementById('s-mode').textContent = s.mode;
+    }
+    if (s.camera) document.getElementById('s-camera').textContent = s.camera;
+    if (s.drive) document.getElementById('s-drive').textContent = s.drive;
+
+    // Dynamic Hardware / Simulation Environment Banner
+    const isMockEsp = Boolean(s.esp32_comm && s.esp32_comm.simulation_mode);
+    const isRealCam = s.camera === 'connected';
+    const isRealYolo = Boolean(s.follow && s.follow.person_detector && s.follow.person_detector.status === 'REAL');
+
+    const hwEnvBadge = document.getElementById('hw-env-badge');
+    const hwSummary = document.getElementById('hw-banner-summary');
+    const bCam = document.getElementById('badge-cam-hw');
+    const bYolo = document.getElementById('badge-yolo-hw');
+    const bEsp = document.getElementById('badge-esp-hw');
+    const bDist = document.getElementById('badge-dist-hw');
+
+    if (bCam) {
+      bCam.textContent = isRealCam ? 'CAM: USB HARDWARE' : 'CAM: VIRTUAL / SYNTHETIC';
+      bCam.className = 'tag-badge ' + (isRealCam ? 'badge-ok' : 'badge-warn');
+    }
+    if (bYolo) {
+      bYolo.textContent = isRealYolo ? 'YOLO: REAL ONNX' : 'YOLO: SIMULATION';
+      bYolo.className = 'tag-badge ' + (isRealYolo ? 'badge-ok' : 'badge-warn');
+    }
+    if (bEsp) {
+      bEsp.textContent = isMockEsp ? 'ESP32: MOCK SERIAL' : 'ESP32: PHYSICAL SERIAL';
+      bEsp.className = 'tag-badge ' + (isMockEsp ? 'badge-warn' : 'badge-ok');
+    }
+    if (bDist) {
+      if (currentFollowMode === 'PERSON') {
+        bDist.textContent = 'DIST: UNAVAILABLE (VISION ONLY)';
+        bDist.className = 'tag-badge badge-warn';
+      } else if (currentFollowMode === 'POCKET_TAG') {
+        const isUwb = activeTagSource === 'UWB';
+        bDist.textContent = isUwb ? 'DIST: UWB METRIC' : 'DIST: BLE RSSI';
+        bDist.className = 'tag-badge ' + (isUwb ? 'badge-ok' : 'badge-warn');
+      } else {
+        bDist.textContent = 'DIST: N/A (MANUAL)';
+        bDist.className = 'tag-badge badge-warn';
+      }
+    }
+    if (hwEnvBadge && hwSummary) {
+      if (!isMockEsp && isRealCam && isRealYolo) {
+        hwEnvBadge.textContent = 'HARDWARE ACTIVE';
+        hwEnvBadge.style.background = '#184a28';
+        hwEnvBadge.style.color = '#40c057';
+        hwEnvBadge.style.borderColor = '#2b8a3e';
+        hwSummary.textContent = 'Physical hardware devices connected. Actuators ready.';
+      } else {
+        hwEnvBadge.textContent = 'SAFE SIMULATION MODE';
+        hwEnvBadge.style.background = '#543809';
+        hwEnvBadge.style.color = '#f2bd42';
+        hwEnvBadge.style.borderColor = '#d49b22';
+        hwSummary.textContent = 'Physical hardware disconnected. Safe software mock environment active (no actuator actuation).';
+      }
+    }
+
+    // Emergency Stop Latch & Warnings
+    emergencyStopLatched = Boolean(s.emergency_stop_latched || (s.follow && s.follow.emergency_stop_latched));
+    const latchAlert = document.getElementById('safety-latch-alert');
+    const btnDriveReset = document.getElementById('btn-drive-reset');
+    const btnFollowReset = document.getElementById('btn-follow-reset');
+
+    if (latchAlert) latchAlert.style.display = emergencyStopLatched ? 'flex' : 'none';
+    if (btnDriveReset) btnDriveReset.style.display = emergencyStopLatched ? 'block' : 'none';
+    if (btnFollowReset) btnFollowReset.style.display = emergencyStopLatched ? 'inline-block' : 'none';
+
+    // ESP32 Communication Layer Telemetry
+    if (s.esp32_comm) {
+      const esp = s.esp32_comm;
+      const isMock = Boolean(esp.simulation_mode);
+      const isConn = Boolean(esp.connected);
+
+      const espModeBadge = document.getElementById('esp32-mode-badge');
+      if (espModeBadge) {
+        espModeBadge.textContent = isMock ? 'MOCK SERIAL TRANSPORT' : 'PHYSICAL SERIAL';
+        espModeBadge.className = 'tag-badge ' + (isMock ? 'badge-warn' : 'badge-ok');
+      }
+
+      const espConnBadge = document.getElementById('esp32-conn-badge');
+      if (espConnBadge) {
+        espConnBadge.textContent = isConn ? 'CONNECTED' : 'DISCONNECTED';
+        espConnBadge.className = 'tag-badge ' + (isConn ? 'badge-ok' : 'badge-err');
+      }
+
+      const espTransportEl = document.getElementById('esp32-transport-status');
+      if (espTransportEl) {
+        espTransportEl.textContent = isConn ? (isMock ? 'CONNECTED (Mock)' : 'CONNECTED (Hardware)') : 'DISCONNECTED';
+      }
+
+      const espHwTypeEl = document.getElementById('esp32-hw-type');
+      if (espHwTypeEl) {
+        espHwTypeEl.textContent = isMock ? 'In-Memory Mock Serial' : (s.esp32_configured ? 'ESP32 Microcontroller' : 'Serial Port');
+        espHwTypeEl.style.color = isMock ? '#f2bd42' : '#40c057';
+      }
+
+      const espSeqEl = document.getElementById('esp32-seq');
+      if (espSeqEl) {
+        espSeqEl.textContent = `#${esp.seq ?? 0}`;
+      }
+
+      const espWatchdogEl = document.getElementById('esp32-watchdog');
+      if (espWatchdogEl) {
+        espWatchdogEl.textContent = `${esp.watchdog_timeout_sec ?? 1.0}s (age: ${esp.last_heartbeat_age_sec ?? 0}s)`;
+      }
+
+      const espStateEl = document.getElementById('esp32-state');
+      if (espStateEl) {
+        espStateEl.textContent = esp.current_state || 'STOPPED';
+      }
+
+      const espErrorEl = document.getElementById('esp32-error');
+      if (espErrorEl) {
+        if (esp.error) {
+          espErrorEl.textContent = esp.error;
+          espErrorEl.style.color = '#ff6b6b';
+        } else {
+          espErrorEl.textContent = 'None';
+          espErrorEl.style.color = '#40c057';
+        }
+      }
+    }
+
+    // Physical Sensor Telemetry (HC-SR04 & MPU6050)
+    if (s.sensors) {
+      const sens = s.sensors;
+      const distEl = document.getElementById('sensor-distance-cm');
+      const obsEl = document.getElementById('sensor-obstacle-state');
+      const accelEl = document.getElementById('sensor-accel');
+      const gyroEl = document.getElementById('sensor-gyro');
+      const freshEl = document.getElementById('sensor-freshness');
+      const errEl = document.getElementById('sensor-error');
+      const freshBadge = document.getElementById('sensor-freshness-badge');
+      const obsBadge = document.getElementById('sensor-obstacle-badge');
+
+      // Distance in centimetres
+      if (distEl) {
+        if (sens.distance_cm !== null && sens.distance_cm !== undefined) {
+          distEl.textContent = `${parseFloat(sens.distance_cm).toFixed(1)} cm`;
+        } else {
+          distEl.textContent = sens.telemetry_received ? 'Out of Range' : '—';
+        }
+      }
+
+      // Obstacle state
+      const isObs = Boolean(sens.obstacle || (s.follow && s.follow.obstacle_detected));
+      if (obsEl) {
+        if (isObs) {
+          obsEl.textContent = 'OBSTACLE DETECTED (<= 30.0 cm)';
+          obsEl.style.color = '#ff6b6b';
+        } else {
+          obsEl.textContent = 'CLEAR (> 30.0 cm)';
+          obsEl.style.color = '#40c057';
+        }
+      }
+      if (obsBadge) {
+        obsBadge.textContent = isObs ? 'OBSTACLE DETECTED' : 'PATH CLEAR';
+        obsBadge.className = 'tag-badge ' + (isObs ? 'badge-err' : 'badge-ok');
+      }
+
+      // MPU6050 acceleration and gyroscope values
+      const imu = sens.imu || {};
+      if (accelEl) {
+        const ax = (imu.ax ?? 0).toFixed(2);
+        const ay = (imu.ay ?? 0).toFixed(2);
+        const az = (imu.az ?? 0).toFixed(2);
+        accelEl.textContent = `${ax}, ${ay}, ${az} m/s²`;
+      }
+      if (gyroEl) {
+        const gx = (imu.gx ?? 0).toFixed(2);
+        const gy = (imu.gy ?? 0).toFixed(2);
+        const gz = (imu.gz ?? 0).toFixed(2);
+        gyroEl.textContent = `${gx}, ${gy}, ${gz} °/s`;
+      }
+
+      // Sensor validity & freshness
+      if (freshBadge) {
+        if (!sens.telemetry_received) {
+          freshBadge.textContent = 'WAITING FOR TELEMETRY';
+          freshBadge.className = 'tag-badge badge-warn';
+        } else if (sens.is_stale) {
+          freshBadge.textContent = 'TELEMETRY STALE (> 2.0s)';
+          freshBadge.className = 'tag-badge badge-err';
+        } else if (!sens.is_valid) {
+          freshBadge.textContent = 'SENSOR INVALID';
+          freshBadge.className = 'tag-badge badge-err';
+        } else {
+          freshBadge.textContent = 'TELEMETRY STREAMING (10 Hz)';
+          freshBadge.className = 'tag-badge badge-ok';
+        }
+      }
+      if (freshEl) {
+        if (!sens.telemetry_received) {
+          freshEl.textContent = 'No data';
+          freshEl.style.color = '#f2bd42';
+        } else {
+          const age = (sens.age_sec !== null && sens.age_sec !== undefined) ? `${sens.age_sec}s` : 'recent';
+          const validStr = sens.is_valid ? 'Valid' : 'Invalid';
+          const staleStr = sens.is_stale ? 'Stale' : 'Fresh';
+          freshEl.textContent = `${validStr} (${staleStr}, age: ${age})`;
+          freshEl.style.color = (sens.is_valid && !sens.is_stale) ? '#40c057' : '#ff6b6b';
+        }
+      }
+
+      // Sensor communication errors
+      if (errEl) {
+        const errs = [];
+        if (sens.error) errs.push(sens.error);
+        if (sens.ultrasonic_error && sens.ultrasonic_error !== 'ok' && sens.ultrasonic_error !== 'no_data') {
+          errs.push(`US: ${sens.ultrasonic_error}`);
+        }
+        if (sens.imu_error && sens.imu_error !== 'ok' && sens.imu_error !== 'no_data') {
+          errs.push(`IMU: ${sens.imu_error}`);
+        }
+        if (errs.length > 0) {
+          errEl.textContent = errs.join('; ');
+          errEl.style.color = '#ff6b6b';
+        } else {
+          errEl.textContent = 'None';
+          errEl.style.color = '#40c057';
+        }
+      }
+    }
+
+    const target = s.object || {};
+    document.getElementById('s-target-id').textContent = (target.id !== undefined && target.id !== null) ? `#${target.id}` : '—';
+    document.getElementById('s-direction').textContent = target.direction || 'NO TARGET';
+    document.getElementById('s-coords').textContent = target.detected
+      ? `X: ${target.x ?? 0}, Y: ${target.y ?? 0}`
+      : '—';
+    document.getElementById('s-target-movement').textContent = target.movement || '—';
+    document.getElementById('s-color').textContent = target.color || 'NONE';
+
+    const count = s.object_count !== undefined
+      ? s.object_count
+      : (Array.isArray(s.objects) ? s.objects.length : 0);
+    const countEl = document.getElementById('s-object-count');
+    if (countEl) countEl.textContent = count;
+    const totalObjectsEl = document.getElementById('s-total-objects');
+    if (totalObjectsEl) totalObjectsEl.textContent = count;
+
+    // Autonomous Decision Engine status updates
+    if (s.autonomous) {
+      const a = s.autonomous;
+      autoEnabled = Boolean(a.enabled);
+      const toggleBtn = document.getElementById('auto-toggle-btn');
+      if (toggleBtn) {
+        toggleBtn.textContent = autoEnabled ? 'DISABLE AUTO' : 'ENABLE AUTO';
+        toggleBtn.className = autoEnabled ? 'stop' : 'gold';
+      }
+      const modeStatus = document.getElementById('auto-mode-status');
+      if (modeStatus) {
+        modeStatus.textContent = autoEnabled ? 'ENABLED' : 'DISABLED';
+        modeStatus.style.color = autoEnabled ? '#40c057' : '#cbd5dc';
+      }
+      const decisionEl = document.getElementById('auto-decision');
+      if (decisionEl) {
+        decisionEl.textContent = a.decision || 'STOP';
+        decisionEl.style.color = (a.decision === 'STOP' && autoEnabled) ? '#e5484d' : '#f2bd42';
+      }
+      const targetIdEl = document.getElementById('auto-target-id');
+      if (targetIdEl) {
+        if (a.target_id !== null && a.target_id !== undefined) {
+          targetIdEl.textContent = `#${a.target_id} (MANUAL)`;
+        } else if (a.target) {
+          targetIdEl.textContent = `#${a.target.id} (AUTO)`;
+        } else {
+          targetIdEl.textContent = 'AUTO (NONE)';
+        }
+      }
+      const targetPosEl = document.getElementById('auto-target-pos');
+      if (targetPosEl) {
+        targetPosEl.textContent = a.target
+          ? `${a.target.direction || '—'} (X:${a.target.x}, Y:${a.target.y})`
+          : '—';
+      }
+      const stateEl = document.getElementById('auto-state');
+      if (stateEl) {
+        stateEl.textContent = a.state || 'IDLE';
+      }
+      const motorCmdEl = document.getElementById('auto-motor-cmd');
+      if (motorCmdEl) {
+        const cmd = a.command || { direction: 'stop', speed: 0 };
+        motorCmdEl.textContent = `${cmd.direction.toUpperCase()} (speed: ${cmd.speed})`;
+      }
+    }
+
+    // Follow Control status updates
+    if (s.follow) {
+      const f = s.follow;
+      followEnabled = Boolean(f.enabled);
+      currentFollowMode = f.mode || 'MANUAL';
+
+      // Mode selector tabs
+      const modeManualBtn = document.getElementById('mode-btn-manual');
+      const modePersonBtn = document.getElementById('mode-btn-person');
+      const modeTagBtn = document.getElementById('mode-btn-tag');
+      if (modeManualBtn) modeManualBtn.className = 'mode-btn' + (currentFollowMode === 'MANUAL' ? ' active' : '');
+      if (modePersonBtn) modePersonBtn.className = 'mode-btn' + (currentFollowMode === 'PERSON' ? ' active' : '');
+      if (modeTagBtn) modeTagBtn.className = 'mode-btn' + (currentFollowMode === 'POCKET_TAG' ? ' active' : '');
+
+      // Mode views
+      const viewManual = document.getElementById('follow-view-manual');
+      const viewPerson = document.getElementById('follow-view-person');
+      const viewTag = document.getElementById('follow-view-tag');
+      if (viewManual) viewManual.className = 'follow-mode-content' + (currentFollowMode === 'MANUAL' ? ' active' : '');
+      if (viewPerson) viewPerson.className = 'follow-mode-content' + (currentFollowMode === 'PERSON' ? ' active' : '');
+      if (viewTag) viewTag.className = 'follow-mode-content' + (currentFollowMode === 'POCKET_TAG' ? ' active' : '');
+
+      // Follow toggle button
+      const followToggleBtn = document.getElementById('follow-toggle-btn');
+      if (followToggleBtn) {
+        if (emergencyStopLatched) {
+          followToggleBtn.textContent = 'LATCHED (RESET REQ)';
+          followToggleBtn.className = 'stop';
+          followToggleBtn.disabled = true;
+          followToggleBtn.style.opacity = '0.5';
+          followToggleBtn.title = 'Cannot enable following: Emergency STOP latch active. Click Reset Safety Latch.';
+        } else {
+          followToggleBtn.textContent = followEnabled ? 'DISABLE FOLLOW' : 'ENABLE FOLLOW';
+          followToggleBtn.className = followEnabled ? 'stop' : 'gold';
+          followToggleBtn.disabled = (currentFollowMode === 'MANUAL');
+          followToggleBtn.style.opacity = (currentFollowMode === 'MANUAL') ? '0.5' : '1.0';
+          followToggleBtn.title = '';
+        }
+      }
+
+      // Obstacle Status & Simulation Control updates
+      obstacleDetected = Boolean(f.obstacle_detected);
+      const obsBadge = document.getElementById('obstacle-status-badge');
+      const obsGridStat = document.getElementById('s-follow-obstacle');
+      const obsInfo = document.getElementById('obstacle-info');
+      const btnSimObs = document.getElementById('btn-sim-obstacle');
+
+      if (obsBadge) {
+        obsBadge.textContent = obstacleDetected ? 'OBSTACLE DETECTED' : 'CLEAR';
+        obsBadge.className = 'tag-badge ' + (obstacleDetected ? 'badge-err' : 'badge-ok');
+      }
+      if (obsGridStat) {
+        obsGridStat.innerHTML = obstacleDetected
+          ? '<span class="tag-badge badge-err">STOP (BLOCKED)</span>'
+          : '<span class="tag-badge badge-ok">CLEAR</span>';
+      }
+      if (obsInfo) {
+        obsInfo.textContent = obstacleDetected
+          ? 'Obstacle detected! Safety stop override engaged.'
+          : 'Perimeter clear (Software safety simulation active)';
+      }
+      if (btnSimObs) {
+        btnSimObs.textContent = obstacleDetected ? 'REMOVE OBSTACLE' : 'SIMULATE OBSTACLE';
+        btnSimObs.style.background = obstacleDetected ? '#521919' : '#492424';
+      }
+
+      // Telemetry fields
+      const fModeEl = document.getElementById('s-follow-mode');
+      if (fModeEl) fModeEl.textContent = currentFollowMode;
+      const fStateEl = document.getElementById('s-follow-state');
+      if (fStateEl) fStateEl.textContent = f.state || 'IDLE';
+      const fDistEl = document.getElementById('s-follow-target-dist');
+      if (fDistEl) fDistEl.textContent = (f.target_distance_m ? f.target_distance_m.toFixed(2) : '1.50') + ' m';
+      const fDecEl = document.getElementById('s-follow-decision');
+      if (fDecEl) {
+        fDecEl.textContent = f.decision || 'STOP';
+        fDecEl.style.color = (f.decision === 'STOP' && followEnabled) ? '#e5484d' : '#f2bd42';
+      }
+      const fCmdEl = document.getElementById('s-follow-sim-cmd');
+      if (fCmdEl) {
+        const cmd = f.last_command || {};
+        fCmdEl.textContent = `${(cmd.direction || 'stop').toUpperCase()} (speed: ${cmd.speed ?? 0}) [SIM]`;
+      }
+
+      // Active target description
+      const fTargetEl = document.getElementById('s-follow-active-target');
+      if (fTargetEl) {
+        if (currentFollowMode === 'PERSON') {
+          const pt = f.person_tracker || {};
+          if (pt.target) {
+            fTargetEl.textContent = `Person #${pt.target.id} (${pt.target.direction})`;
+          } else {
+            fTargetEl.textContent = pt.selected_person_id ? `#${pt.selected_person_id} (${pt.reacquisition_status})` : 'AUTO (None)';
+          }
+        } else if (currentFollowMode === 'POCKET_TAG') {
+          const tt = f.tag_tracker || {};
+          if (tt.reading && tt.reading.connected) {
+            const dStr = tt.reading.distance_m !== null ? `${tt.reading.distance_m}m` : 'no dist';
+            fTargetEl.textContent = `Tag ${tt.reading.tag_id} (${dStr})`;
+          } else {
+            fTargetEl.textContent = tt.selected_tag_id ? `${tt.selected_tag_id} (DISCONNECTED)` : 'ANY (DISCONNECTED)';
+          }
+        } else {
+          fTargetEl.textContent = 'NONE (MANUAL)';
+        }
+      }
+
+      // Person Detector Health & Performance Telemetry
+      if (f.person_detector) {
+        const pd = f.person_detector;
+        const detBadge = document.getElementById('det-status-badge');
+        if (detBadge) {
+          detBadge.textContent = pd.status || 'UNAVAILABLE';
+          detBadge.className = 'tag-badge ' + (pd.status === 'REAL' ? 'badge-ok' : (pd.status === 'SIMULATION' ? 'badge-warn' : 'badge-err'));
+        }
+        const detPerf = document.getElementById('det-perf-stats');
+        if (detPerf) {
+          detPerf.textContent = `${(pd.inference_time_ms || 0).toFixed(1)} ms | ${(pd.fps || 0).toFixed(1)} FPS`;
+        }
+        const realBtn = document.getElementById('det-mode-real');
+        const simBtn = document.getElementById('det-mode-sim');
+        if (realBtn) realBtn.className = 'mode-btn' + (pd.manager_mode === 'REAL' ? ' active' : '');
+        if (simBtn) simBtn.className = 'mode-btn' + (pd.manager_mode === 'SIMULATION' ? ' active' : '');
+      }
+
+      // Target Tracking Status & Reacquisition Alerts
+      if (f.person_tracker) {
+        const pt = f.person_tracker;
+        const reacqBadge = document.getElementById('s-person-reacq-badge');
+        if (reacqBadge) {
+          const st = pt.reacquisition_status || 'IDLE';
+          if (st === 'TRACKING') {
+            reacqBadge.textContent = 'TARGET: TRACKING';
+            reacqBadge.className = 'tag-badge badge-ok';
+          } else if (st === 'OCCLUDED') {
+            reacqBadge.textContent = 'OCCLUDED (REACQUIRING)';
+            reacqBadge.className = 'tag-badge badge-warn';
+          } else if (st === 'LOST') {
+            reacqBadge.textContent = 'TARGET LOST (HALTED)';
+            reacqBadge.className = 'tag-badge badge-err';
+          } else {
+            reacqBadge.textContent = 'STATUS: IDLE';
+            reacqBadge.className = 'tag-badge badge-warn';
+          }
+        }
+        const countVal = document.getElementById('person-count-val');
+        if (countVal) countVal.textContent = pt.count || 0;
+      }
+
+      // Person Mode: Render detected people
+      const personListEl = document.getElementById('follow-person-list');
+      if (personListEl && f.person_tracker) {
+        const people = f.person_tracker.people || [];
+        if (people.length > 0) {
+          personListEl.innerHTML = people.map(p => {
+            const conf = Math.round((p.confidence || 0) * 100);
+            const dir = escapeHtml(p.direction || 'CENTER');
+            const center = p.center || [0, 0];
+            const isTarget = f.person_tracker.target && f.person_tracker.target.id === p.id;
+            return `
+              <div class="object-card" style="${isTarget ? 'border-color:#f2bd42;box-shadow:0 0 10px #f2bd4233;' : ''}">
+                <div class="object-card-header">
+                  <span class="object-title">Person #${p.id} ${isTarget ? '★ TARGET' : ''}</span>
+                  <span class="pill" style="font-size:11px;padding:2px 7px;">${conf}% Conf</span>
+                </div>
+                <div class="object-card-body">
+                  <div class="object-prop">
+                    <small>Center Coords</small>
+                    <strong>X:${center[0]}, Y:${center[1]}</strong>
+                  </div>
+                  <div class="object-prop">
+                    <small>Direction</small>
+                    <strong>${dir}</strong>
+                  </div>
+                  <div class="object-prop full-prop" style="display:flex;justify-content:space-between;align-items:center;">
+                    <span style="color:#f2bd42;font-size:11px;">Ranging: UNAVAILABLE</span>
+                    <button onclick="selectSpecificPerson(${p.id})" style="padding:4px 9px;font-size:11px;background:${isTarget ? '#d49b22' : '#334956'};color:${isTarget ? '#101820' : '#fff'};font-weight:700;">
+                      ${isTarget ? 'LOCKED TARGET' : 'SELECT TARGET'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            `;
+          }).join('');
+        } else {
+          personListEl.innerHTML = '<div class="empty-state">No people currently detected by vision interface</div>';
+        }
+      }
+
+      // Tag Mode: Render tag telemetry
+      if (f.tag_tracker) {
+        const tt = f.tag_tracker;
+        activeTagSource = tt.active_source || 'UWB';
+        const srcUwbBtn = document.getElementById('tag-source-uwb');
+        const srcBleBtn = document.getElementById('tag-source-ble');
+        if (srcUwbBtn) srcUwbBtn.className = 'mode-btn' + (activeTagSource === 'UWB' ? ' active' : '');
+        if (srcBleBtn) srcBleBtn.className = 'mode-btn' + (activeTagSource === 'BLE' ? ' active' : '');
+
+        const reading = tt.reading;
+        const connEl = document.getElementById('s-tag-conn');
+        if (connEl) {
+          const isConn = Boolean(reading && reading.connected);
+          connEl.innerHTML = isConn
+            ? '<span class="tag-badge badge-ok">CONNECTED</span>'
+            : '<span class="tag-badge badge-err">DISCONNECTED</span>';
+        }
+
+        const validEl = document.getElementById('s-tag-valid');
+        if (validEl) {
+          const isValid = Boolean(reading && reading.valid);
+          validEl.innerHTML = isValid
+            ? '<span class="tag-badge badge-ok">VALID</span>'
+            : '<span class="tag-badge badge-warn">INVALID / STALE</span>';
+        }
+
+        const distEl = document.getElementById('s-tag-dist');
+        if (distEl) {
+          if (reading && reading.connected) {
+            if (reading.is_metric && reading.distance_m !== null) {
+              distEl.textContent = `${reading.distance_m.toFixed(2)} m (Metric)`;
+            } else if (reading.distance_m !== null) {
+              distEl.textContent = `~${reading.distance_m.toFixed(2)} m (Rough RSSI)`;
+            } else {
+              distEl.textContent = '—';
+            }
+          } else {
+            distEl.textContent = '—';
+          }
+        }
+
+        const qualEl = document.getElementById('s-tag-quality');
+        if (qualEl) {
+          if (reading && reading.connected) {
+            qualEl.textContent = reading.raw_rssi !== null
+              ? `${reading.raw_rssi} dBm (${reading.proximity_level || '—'})`
+              : `${reading.signal_quality}%`;
+          } else {
+            qualEl.textContent = '—';
+          }
+        }
+
+        const dirEl = document.getElementById('s-tag-direction');
+        if (dirEl) {
+          dirEl.textContent = (reading && reading.direction) ? reading.direction : 'UNKNOWN';
+        }
+
+        const ageEl = document.getElementById('s-tag-age');
+        if (ageEl) {
+          if (reading && reading.timestamp) {
+            const age = Math.max(0, (Date.now() / 1000 - reading.timestamp)).toFixed(1);
+            ageEl.textContent = `${age}s ago`;
+          } else {
+            ageEl.textContent = '—';
+          }
+        }
+      }
+    }
+
+    const objectList = document.getElementById('s-object-list');
+    if (objectList) {
+      if (Array.isArray(s.objects) && s.objects.length > 0) {
+        objectList.innerHTML = s.objects.map((obj, index) => {
+          const color = escapeHtml(obj.color || 'UNKNOWN');
+          const colorKey = (obj.color || 'unknown').toLowerCase();
+          const x = obj.x !== undefined ? obj.x : '—';
+          const y = obj.y !== undefined ? obj.y : '—';
+          const dir = escapeHtml(obj.direction || '—');
+          const id = (obj.id !== undefined && obj.id !== null) ? obj.id : (index + 1);
+          const movement = escapeHtml(obj.movement || 'STATIONARY');
+          return `
+            <div class="object-card">
+              <div class="object-card-header">
+                <span class="object-title">ID #${id}</span>
+                <span class="color-badge badge-${colorKey}">
+                  <span class="color-dot"></span>
+                  ${color}
+                </span>
+              </div>
+              <div class="object-card-body">
+                <div class="object-prop">
+                  <small>Coordinates</small>
+                  <strong>X: ${x}, Y: ${y}</strong>
+                </div>
+                <div class="object-prop">
+                  <small>Direction</small>
+                  <strong>${dir}</strong>
+                </div>
+                <div class="object-prop full-prop">
+                  <small>Movement</small>
+                  <strong class="movement-tag">${movement}</strong>
+                </div>
+              </div>
+            </div>
+          `;
+        }).join('');
+      } else {
+        objectList.innerHTML = '<div class="empty-state">No objects detected</div>';
+      }
+    }
+  }catch(e){
+    console.error('Failed to refresh status:', e);
+  }
+}
+
+// ============================================================================
+// STAGE 6: INTERACTIVE 2D CANVAS SIMULATION ARENA LOGIC
+// ============================================================================
+let arenaRunning = true;
+let arenaState = null;
+let personWalkSpeed = 1.0;
+let keysPressed = {};
+let arenaIntervalId = null;
+
+const arenaCanvas = document.getElementById('arenaCanvas');
+const arenaCtx = arenaCanvas ? arenaCanvas.getContext('2d') : null;
+
+// Scale factors: 760px / 10m = 76 px/m, 520px / 8m = 65 px/m
+const ARENA_SCALE_X = 76.0;
+const ARENA_SCALE_Y = 65.0;
+
+function toCanvasX(mX) { return mX * ARENA_SCALE_X; }
+function toCanvasY(mY) { return mY * ARENA_SCALE_Y; }
+function toMetersX(cX) { return cX / ARENA_SCALE_X; }
+function toMetersY(cY) { return cY / ARENA_SCALE_Y; }
+
+async function fetchArenaState() {
+  try {
+    const res = await fetch('/api/arena/state');
+    const data = await res.json();
+    if (data.ok && data.state) {
+      arenaState = data.state;
+      renderArena();
+      updateArenaTelemetry();
+    }
+  } catch (e) {
+    console.error('Failed to fetch arena state:', e);
+  }
+}
+
+async function stepArenaLoop() {
+  if (!arenaRunning) return;
+  try {
+    const res = await fetch('/api/arena/step', { method: 'POST' });
+    const data = await res.json();
+    if (data.ok && data.state) {
+      arenaState = data.state;
+      renderArena();
+      updateArenaTelemetry();
+    }
+  } catch (e) {
+    console.error('Arena step error:', e);
+  }
+}
+
+function updateArenaTelemetry() {
+  if (!arenaState) return;
+  const r = arenaState.robot || {};
+  const s = arenaState.sensors || {};
+  const d = arenaState.decision || 'STOP';
+
+  const poseEl = document.getElementById('arena-robot-pose');
+  if (poseEl) poseEl.textContent = `${(r.x||0).toFixed(2)}m, ${(r.y||0).toFixed(2)}m @ ${(r.heading_deg||0).toFixed(1)}°`;
+
+  const metEl = document.getElementById('arena-target-metrics');
+  if (metEl) metEl.textContent = `${(arenaState.target_distance_m||0).toFixed(2)}m | ${(arenaState.target_bearing_deg||0).toFixed(1)}°`;
+
+  const stateEl = document.getElementById('arena-follow-state');
+  if (stateEl) {
+    stateEl.textContent = d === 'MOVE_FORWARD' ? 'APPROACHING' : (d === 'HOLD' ? 'HOLDING DIST' : d);
+    stateEl.style.color = d === 'STOP' ? '#ff8787' : (d === 'HOLD' ? '#ffd43b' : '#40c057');
+  }
+
+  const cmdEl = document.getElementById('arena-motor-cmd');
+  if (cmdEl) {
+    cmdEl.textContent = `${(r.command||'stop').toUpperCase()} (spd: ${r.speed||0})`;
+    cmdEl.style.color = (r.command === 'stop') ? '#ffd43b' : '#40c057';
+  }
+
+  const sensEl = document.getElementById('arena-sensor-dist');
+  if (sensEl) {
+    if (s.simulated_sensor_fail) {
+      sensEl.textContent = 'SENSOR FAIL / STALE';
+      sensEl.style.color = '#ff8787';
+    } else {
+      sensEl.textContent = `${s.distance_cm !== null ? s.distance_cm.toFixed(1) + ' cm' : '—'} (${s.obstacle ? 'OBSTACLE' : 'CLEAR'})`;
+      sensEl.style.color = s.obstacle ? '#ff8787' : '#40c057';
+    }
+  }
+
+  const tgtEl = document.getElementById('arena-target-status');
+  if (tgtEl) {
+    tgtEl.textContent = arenaState.target_locked ? `Person #${arenaState.selected_target_id} (LOCKED)` : 'UNLOCKED / AUTO';
+    tgtEl.style.color = arenaState.target_locked ? '#40c057' : '#ffd43b';
+  }
+
+  const stopReasonEl = document.getElementById('arena-stop-reason');
+  if (stopReasonEl) {
+    const sr = arenaState.stop_reason || 'NONE';
+    stopReasonEl.textContent = sr;
+    if (sr === 'E-STOP' || sr === 'COMMUNICATION FAILURE') {
+      stopReasonEl.style.color = '#ff6b6b';
+    } else if (sr === 'OBSTACLE') {
+      stopReasonEl.style.color = '#ff922b';
+    } else if (sr === 'TARGET OUT OF VIEW' || sr === 'TARGET LOST' || sr === 'SENSOR STALE') {
+      stopReasonEl.style.color = '#ffd43b';
+    } else {
+      stopReasonEl.style.color = '#51cf66';
+    }
+  }
+
+  const navModeEl = document.getElementById('arena-nav-mode');
+  if (navModeEl) {
+    const nm = arenaState.navigation_mode || 'DIRECT_FOLLOW';
+    navModeEl.textContent = nm;
+    if (nm === 'OBSTACLE_AVOIDANCE') navModeEl.style.color = '#ffd43b';
+    else if (nm === 'TARGET_SEARCH') navModeEl.style.color = '#da77f2';
+    else navModeEl.style.color = '#74c0fc';
+  }
+
+  const avoidStateEl = document.getElementById('arena-avoid-state');
+  if (avoidStateEl) {
+    const as = arenaState.avoidance_state || 'CLEAR';
+    avoidStateEl.textContent = as;
+    if (as === 'CLEAR') avoidStateEl.style.color = '#40c057';
+    else if (as === 'BLOCKED') avoidStateEl.style.color = '#ff6b6b';
+    else avoidStateEl.style.color = '#ffd43b';
+  }
+
+  const detourDirEl = document.getElementById('arena-detour-dir');
+  if (detourDirEl) {
+    const dd = arenaState.detour_direction || 'NONE';
+    detourDirEl.textContent = dd;
+    detourDirEl.style.color = (dd !== 'NONE') ? '#74c0fc' : '#91a0a9';
+  }
+
+  const searchProgEl = document.getElementById('arena-search-progress');
+  if (searchProgEl) {
+    const deg = (arenaState.target_search_progress_deg || 0).toFixed(0);
+    searchProgEl.textContent = `${deg}° / 360°`;
+    searchProgEl.style.color = (arenaState.navigation_mode === 'TARGET_SEARCH') ? '#da77f2' : '#91a0a9';
+  }
+
+  const reacqEl = document.getElementById('arena-reacquire-status');
+  if (reacqEl) {
+    const rs = arenaState.target_reacquisition_status || 'ACQUIRED';
+    reacqEl.textContent = rs;
+    if (rs === 'ACQUIRED' || rs === 'REACQUIRED') reacqEl.style.color = '#40c057';
+    else if (rs === 'SEARCHING') reacqEl.style.color = '#da77f2';
+    else if (rs === 'NOT_FOUND') reacqEl.style.color = '#ff6b6b';
+    else reacqEl.style.color = '#ffd43b';
+  }
+
+  const autoAvoidBtn = document.getElementById('btn-arena-auto-avoid');
+  const autoAvoidBadge = document.getElementById('arena-avoid-badge');
+  if (autoAvoidBtn) {
+    const en = !!arenaState.auto_avoidance_enabled;
+    autoAvoidBtn.textContent = `AUTO AVOIDANCE: ${en ? 'ENABLED' : 'DISABLED'}`;
+    autoAvoidBtn.style.color = en ? '#74c0fc' : '#ff8787';
+    autoAvoidBtn.style.borderColor = en ? '#339af0' : '#c92a2a';
+    if (autoAvoidBadge) {
+      autoAvoidBadge.textContent = en ? 'AUTO-AVOID ON' : 'AUTO-AVOID OFF';
+      autoAvoidBadge.style.color = en ? '#40c057' : '#ff8787';
+    }
+  }
+}
+
+function renderArena() {
+  if (!arenaCtx || !arenaState) return;
+  const ctx = arenaCtx;
+  const w = arenaCanvas.width;
+  const h = arenaCanvas.height;
+
+  // 1. Background Grid
+  ctx.fillStyle = '#0d1822';
+  ctx.fillRect(0, 0, w, h);
+
+  ctx.strokeStyle = '#162838';
+  ctx.lineWidth = 1;
+  for (let x = 0; x < w; x += ARENA_SCALE_X) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, h);
+    ctx.stroke();
+  }
+  for (let y = 0; y < h; y += ARENA_SCALE_Y) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(w, y);
+    ctx.stroke();
+  }
+
+  // 2. Obstacles
+  const obstacles = arenaState.obstacles || [];
+  obstacles.forEach(obs => {
+    const ox = toCanvasX(obs.x);
+    const oy = toCanvasY(obs.y);
+    const r = obs.radius * ARENA_SCALE_X;
+
+    ctx.fillStyle = '#492424';
+    ctx.strokeStyle = '#ff6b6b';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(ox, oy, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = '#ffa8a8';
+    ctx.font = '10px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(obs.label || 'Obstacle', ox, oy + 3);
+  });
+
+  // 2b. Planned Avoidance Path (Detour)
+  const plannedPath = arenaState.planned_path || [];
+  if (plannedPath.length > 1) {
+    ctx.save();
+    ctx.strokeStyle = '#ffd43b';
+    ctx.lineWidth = 2.5;
+    ctx.setLineDash([8, 5]);
+    ctx.beginPath();
+    ctx.moveTo(toCanvasX(plannedPath[0][0]), toCanvasY(plannedPath[0][1]));
+    for (let i = 1; i < plannedPath.length; i++) {
+      ctx.lineTo(toCanvasX(plannedPath[i][0]), toCanvasY(plannedPath[i][1]));
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Draw waypoints
+    for (let i = 1; i < plannedPath.length; i++) {
+      const wx = toCanvasX(plannedPath[i][0]);
+      const wy = toCanvasY(plannedPath[i][1]);
+      ctx.fillStyle = '#fab005';
+      ctx.beginPath();
+      ctx.arc(wx, wy, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      ctx.fillStyle = '#ffd43b';
+      ctx.font = 'bold 10px monospace';
+      ctx.textAlign = 'left';
+      ctx.fillText(`W${i}`, wx + 7, wy - 3);
+    }
+    ctx.restore();
+  }
+
+  // 3. Robot Trail
+  const robot = arenaState.robot || { x: 2.5, y: 4.0, heading_deg: 0 };
+  const rTrail = robot.trail || [];
+  if (rTrail.length > 1) {
+    ctx.strokeStyle = 'rgba(116, 192, 252, 0.35)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(toCanvasX(rTrail[0][0]), toCanvasY(rTrail[0][1]));
+    for (let i = 1; i < rTrail.length; i++) {
+      ctx.lineTo(toCanvasX(rTrail[i][0]), toCanvasY(rTrail[i][1]));
+    }
+    ctx.stroke();
+  }
+
+  const rx = toCanvasX(robot.x);
+  const ry = toCanvasY(robot.y);
+  const rRad = (robot.heading_deg * Math.PI) / 180.0;
+
+  // 4. Safe Following Zone Arc from Robot
+  ctx.save();
+  ctx.translate(rx, ry);
+  ctx.rotate(rRad);
+
+  // Ultrasonic & Camera FOV cone
+  ctx.fillStyle = 'rgba(51, 154, 240, 0.08)';
+  ctx.strokeStyle = 'rgba(51, 154, 240, 0.35)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  const fovRad = (75.0 * Math.PI) / 180.0 / 2.0;
+  const fovRangePx = 6.0 * ARENA_SCALE_X;
+  ctx.arc(0, 0, fovRangePx, -fovRad, fovRad);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // Target Following Zone Arc (1.2m - 1.8m)
+  ctx.fillStyle = 'rgba(64, 192, 87, 0.12)';
+  ctx.strokeStyle = 'rgba(64, 192, 87, 0.5)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(0, 0, 1.8 * ARENA_SCALE_X, -fovRad, fovRad);
+  ctx.arc(0, 0, 1.2 * ARENA_SCALE_X, fovRad, -fovRad, true);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // 360 Degree Search Sweep Indicator
+  if (arenaState.navigation_mode === 'TARGET_SEARCH') {
+    const searchDeg = arenaState.target_search_progress_deg || 0;
+    const sweepRad = (searchDeg * Math.PI) / 180.0;
+    ctx.fillStyle = 'rgba(218, 119, 242, 0.18)';
+    ctx.strokeStyle = 'rgba(218, 119, 242, 0.7)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    // Draw sweep from robot's current local orientation backwards through the scanned sweep
+    ctx.arc(0, 0, 3.5 * ARENA_SCALE_X, -sweepRad, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  // 5. Virtual WALL-E Rover Rendering
+  // Tracks
+  ctx.fillStyle = '#263746';
+  ctx.fillRect(-20, -18, 40, 8);
+  ctx.fillRect(-20, 10, 40, 8);
+  // Chassis
+  ctx.fillStyle = '#d49b22';
+  ctx.fillRect(-16, -10, 32, 20);
+  // Solar panel stripe
+  ctx.fillStyle = '#101820';
+  ctx.fillRect(-12, -7, 24, 14);
+  // Neck & Binocular Head Eyes
+  ctx.fillStyle = '#e8d8b5';
+  ctx.fillRect(8, -8, 10, 7);
+  ctx.fillRect(8, 1, 10, 7);
+  // Lens reflections
+  ctx.fillStyle = '#339af0';
+  ctx.beginPath();
+  ctx.arc(17, -4.5, 3, 0, Math.PI * 2);
+  ctx.arc(17, 4.5, 3, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+
+  // Label Robot
+  ctx.fillStyle = '#74c0fc';
+  ctx.font = 'bold 11px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('WALL-E', rx, ry - 24);
+
+  // 6. People Rendering
+  const people = arenaState.people || [];
+  people.forEach(p => {
+    const px = toCanvasX(p.x);
+    const py = toCanvasY(p.y);
+    const isTarget = (p.id === arenaState.selected_target_id);
+
+    // Person Trail
+    const pTrail = p.trail || [];
+    if (pTrail.length > 1) {
+      ctx.strokeStyle = isTarget ? 'rgba(242, 189, 66, 0.35)' : 'rgba(150, 150, 150, 0.2)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(toCanvasX(pTrail[0][0]), toCanvasY(pTrail[0][1]));
+      for (let i = 1; i < pTrail.length; i++) {
+        ctx.lineTo(toCanvasX(pTrail[i][0]), toCanvasY(pTrail[i][1]));
+      }
+      ctx.stroke();
+    }
+
+    // Person Body & Head
+    ctx.fillStyle = isTarget ? '#f2bd42' : '#868e96';
+    ctx.beginPath();
+    ctx.arc(px, py, 11, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Target Lock Reticle
+    if (isTarget) {
+      ctx.strokeStyle = '#40c057';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.arc(px, py, 20, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Distance indicator line
+      ctx.strokeStyle = 'rgba(64, 192, 87, 0.6)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(rx, ry);
+      ctx.lineTo(px, py);
+      ctx.stroke();
+
+      // Midpoint distance label
+      const midX = (rx + px) / 2;
+      const midY = (ry + py) / 2;
+      ctx.fillStyle = '#101820';
+      ctx.fillRect(midX - 25, midY - 9, 50, 16);
+      ctx.fillStyle = '#40c057';
+      ctx.font = '10px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(`${(arenaState.target_distance_m || 0).toFixed(2)}m`, midX, midY + 3);
+    }
+
+    // Person Label
+    ctx.fillStyle = isTarget ? '#f2bd42' : '#cbd5dc';
+    ctx.font = 'bold 11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(`Person #${p.id}${isTarget ? ' [TARGET]' : ''}`, px, py + 26);
+  });
+}
+
+// User Controls Handlers
+function toggleArenaSim() {
+  arenaRunning = !arenaRunning;
+  const btn = document.getElementById('btn-arena-toggle');
+  const badge = document.getElementById('arena-sim-status-badge');
+  if (btn) {
+    btn.textContent = arenaRunning ? 'PAUSE SIM' : 'RESUME SIM';
+    btn.style.background = arenaRunning ? '#244933' : '#49381e';
+    btn.style.color = arenaRunning ? '#40c057' : '#ffd43b';
+  }
+  if (badge) {
+    badge.textContent = arenaRunning ? 'RUNNING (20 FPS)' : 'PAUSED';
+    badge.className = 'tag-badge ' + (arenaRunning ? 'badge-ok' : 'badge-warn');
+  }
+}
+
+async function resetArenaSim() {
+  try {
+    const res = await fetch('/api/arena/reset', { method: 'POST' });
+    const data = await res.json();
+    if (data.ok) {
+      arenaState = data.state;
+      renderArena();
+      updateArenaTelemetry();
+      setLog('[SIMULATION] Scene reset to initial state (Person #1 at 2.5m, Robot at 2.5m, 4.0m).');
+    }
+  } catch (e) {
+    setLog('Reset error: ' + e.message, true);
+  }
+}
+
+async function manualMovePerson(dx, dy) {
+  const targetId = arenaState ? (arenaState.selected_target_id || 1) : 1;
+  const scaledDx = dx * personWalkSpeed;
+  const scaledDy = dy * personWalkSpeed;
+  try {
+    const res = await fetch('/api/arena/person/move', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ person_id: targetId, dx: scaledDx, dy: scaledDy })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      arenaState = data.state;
+      renderArena();
+      updateArenaTelemetry();
+    }
+  } catch (e) {
+    console.error('Move error:', e);
+  }
+}
+
+function setPersonSpeed(spd) {
+  personWalkSpeed = spd;
+  setLog(`[SIMULATION] Person walking speed set to ${spd} m/s.`);
+}
+
+async function arenaAddPerson() {
+  try {
+    const res = await fetch('/api/arena/person/add', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ x: 5.5, y: 2.5 })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      arenaState = data.state;
+      renderArena();
+      setLog(`[SIMULATION] Added simulated Person #${data.person_id} at (5.5m, 2.5m).`);
+    }
+  } catch (e) {
+    setLog('Add person error: ' + e.message, true);
+  }
+}
+
+async function arenaRemoveTarget() {
+  if (!arenaState || !arenaState.selected_target_id) return;
+  const targetId = arenaState.selected_target_id;
+  try {
+    const res = await fetch(`/api/arena/person/${targetId}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (data.ok) {
+      arenaState = data.state;
+      renderArena();
+      setLog(`[SIMULATION] Target Person #${targetId} removed from frame. Target lost safety engaged.`);
+    }
+  } catch (e) {
+    setLog('Remove target error: ' + e.message, true);
+  }
+}
+
+async function arenaSelectTarget(pid) {
+  try {
+    const res = await fetch(`/api/arena/target/${pid}`, { method: 'POST' });
+    const data = await res.json();
+    if (data.ok) {
+      arenaState = data.state;
+      renderArena();
+      setLog(`[SIMULATION] Target explicitly locked to Person #${pid}.`);
+    }
+  } catch (e) {
+    setLog('Select target error: ' + e.message, true);
+  }
+}
+
+function arenaClearTarget() {
+  if (arenaState) {
+    arenaState.selected_target_id = null;
+    clearPersonTarget();
+  }
+}
+
+async function arenaClearAllObstacles() {
+  try {
+    const res = await fetch('/api/arena/obstacles/clear', { method: 'POST' });
+    const data = await res.json();
+    if (data.ok) {
+      arenaState = data.state;
+      renderArena();
+      updateArenaTelemetry();
+      const btn = document.getElementById('btn-arena-toggle-obs');
+      if (btn) btn.textContent = 'INJECT OBSTACLE IN FRONT (25cm)';
+      arenaObsInjected = false;
+      setLog('[SIMULATION] Cleared all arena obstacles. Fresh clear sensor readings restored.');
+    }
+  } catch (e) {
+    setLog('Clear obstacles error: ' + e.message, true);
+  }
+}
+
+async function arenaRepositionPersonAhead() {
+  try {
+    const res = await fetch('/api/arena/person/reposition', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ distance_m: 2.5 })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      arenaState = data.state;
+      renderArena();
+      updateArenaTelemetry();
+      setLog('[SIMULATION] Person repositioned directly ahead of WALL-E at 2.5m (centered in camera view).');
+    }
+  } catch (e) {
+    setLog('Reposition person error: ' + e.message, true);
+  }
+}
+
+async function arenaReacquireTarget() {
+  try {
+    const res = await fetch('/api/arena/reacquire', { method: 'POST' });
+    const data = await res.json();
+    if (data.ok) {
+      arenaState = data.state;
+      renderArena();
+      updateArenaTelemetry();
+      setLog('[SIMULATION] Target reacquisition active: performing controlled in-place search for locked target.');
+    } else {
+      setLog('[SIMULATION] Reacquisition inhibited: ' + (data.info ? data.info.reason : 'Unable to reacquire'), true);
+    }
+  } catch (e) {
+    setLog('Reacquire target error: ' + e.message, true);
+  }
+}
+
+let arenaObsInjected = false;
+async function toggleArenaObstacleInFront() {
+  arenaObsInjected = !arenaObsInjected;
+  const btn = document.getElementById('btn-arena-toggle-obs');
+  if (arenaObsInjected && arenaState && arenaState.robot) {
+    const r = arenaState.robot;
+    const rad = (r.heading_deg * Math.PI) / 180.0;
+    const obsX = r.x + 0.45 * Math.cos(rad);
+    const obsY = r.y + 0.45 * Math.sin(rad);
+    await fetch('/api/arena/obstacle/add', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ obs_id: 'injected_blocker', x: obsX, y: obsY, radius: 0.25 })
+    });
+    if (btn) btn.textContent = 'REMOVE INJECTED OBSTACLE';
+    setLog('[SIMULATION] Obstacle injected 25cm in front of WALL-E. Safety stop triggered.');
+  } else {
+    await fetch('/api/arena/obstacle/injected_blocker', { method: 'DELETE' });
+    if (btn) btn.textContent = 'INJECT OBSTACLE IN FRONT (25cm)';
+    setLog('[SIMULATION] Injected obstacle removed.');
+  }
+  fetchArenaState();
+}
+
+let arenaSensorFailed = false;
+async function toggleArenaSensorFail() {
+  arenaSensorFailed = !arenaSensorFailed;
+  const btn = document.getElementById('btn-arena-sensor-fail');
+  await fetch('/api/arena/sensor/fail', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fail: arenaSensorFailed })
+  });
+  if (btn) {
+    btn.textContent = arenaSensorFailed ? 'RESTORE SENSOR TELEMETRY' : 'SIMULATE SENSOR FAILURE / STALE';
+    btn.style.background = arenaSensorFailed ? '#244933' : '#49381e';
+    btn.style.color = arenaSensorFailed ? '#40c057' : '#ffd43b';
+  }
+  setLog(`[SIMULATION] Ultrasonic sensor state: ${arenaSensorFailed ? 'FAILED / TIMEOUT' : 'RESTORED'}.`);
+  fetchArenaState();
+}
+
+let arenaEsp32Dropped = false;
+async function toggleArenaEsp32Drop() {
+  arenaEsp32Dropped = !arenaEsp32Dropped;
+  const btn = document.getElementById('btn-arena-esp32-drop');
+  await fetch('/api/esp32/simulate_disconnect', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ disconnected: arenaEsp32Dropped })
+  });
+  if (btn) {
+    btn.textContent = arenaEsp32Dropped ? 'RESTORE ESP32 COMM' : 'SIMULATE ESP32 DISCONNECT';
+    btn.style.background = arenaEsp32Dropped ? '#244933' : '#35263a';
+    btn.style.color = arenaEsp32Dropped ? '#40c057' : '#e599f7';
+  }
+  setLog(`[SIMULATION] ESP32 connection: ${arenaEsp32Dropped ? 'DISCONNECTED (Mock)' : 'CONNECTED'}.`);
+  fetchArenaState();
+}
+
+async function toggleArenaAutoAvoidance() {
+  try {
+    const res = await fetch('/api/arena/avoidance/toggle', { method: 'POST' });
+    const data = await res.json();
+    if (data.ok) {
+      arenaState = data.state;
+      renderArena();
+      updateArenaTelemetry();
+      setLog(`[SIMULATION] Autonomous Obstacle Avoidance: ${data.auto_avoidance_enabled ? 'ENABLED' : 'DISABLED'}.`);
+    }
+  } catch (e) {
+    setLog('Toggle avoidance error: ' + e.message, true);
+  }
+}
+
+async function arenaStart360Search() {
+  try {
+    const res = await fetch('/api/arena/search/start', { method: 'POST' });
+    const data = await res.json();
+    if (data.ok) {
+      arenaState = data.state;
+      renderArena();
+      updateArenaTelemetry();
+      setLog('[SIMULATION] Initiated 360° target search scan for locked target.');
+    } else {
+      setLog('[SIMULATION] Search inhibited: ' + (data.info ? data.info.reason : 'Unable to start search'), true);
+    }
+  } catch (e) {
+    setLog('Start 360 search error: ' + e.message, true);
+  }
+}
+
+async function arenaCancel360Search() {
+  try {
+    const res = await fetch('/api/arena/search/cancel', { method: 'POST' });
+    const data = await res.json();
+    if (data.ok) {
+      arenaState = data.state;
+      renderArena();
+      updateArenaTelemetry();
+      setLog('[SIMULATION] Cancelled 360° target search.');
+    }
+  } catch (e) {
+    setLog('Cancel search error: ' + e.message, true);
+  }
+}
+
+// Canvas Click to Reposition Target Person
+if (arenaCanvas) {
+  arenaCanvas.addEventListener('click', (e) => {
+    const rect = arenaCanvas.getBoundingClientRect();
+    const cX = (e.clientX - rect.left) * (arenaCanvas.width / rect.width);
+    const cY = (e.clientY - rect.top) * (arenaCanvas.height / rect.height);
+    const mX = toMetersX(cX);
+    const mY = toMetersY(cY);
+    const targetId = arenaState ? (arenaState.selected_target_id || 1) : 1;
+
+    if (arenaState && arenaState.people) {
+      const p = arenaState.people.find(item => item.id === targetId);
+      if (p) {
+        manualMovePerson(mX - p.x, mY - p.y);
+      }
+    }
+  });
+}
+
+// Keyboard WASD & Arrow Key Navigation
+window.addEventListener('keydown', (e) => {
+  // Prevent scrolling when using arrow keys inside dashboard
+  if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key)) {
+    e.preventDefault();
+  }
+  const stepSize = 0.35;
+  if (e.key === 'w' || e.key === 'W' || e.key === 'ArrowUp') {
+    manualMovePerson(0, -stepSize);
+  } else if (e.key === 's' || e.key === 'S' || e.key === 'ArrowDown') {
+    manualMovePerson(0, stepSize);
+  } else if (e.key === 'a' || e.key === 'A' || e.key === 'ArrowLeft') {
+    manualMovePerson(-stepSize, 0);
+  } else if (e.key === 'd' || e.key === 'D' || e.key === 'ArrowRight') {
+    manualMovePerson(stepSize, 0);
+  }
+});
+
+// Start Fixed-Rate Arena Simulation Loop (20 FPS = 50ms)
+fetchArenaState();
+arenaIntervalId = setInterval(stepArenaLoop, 50);
+
+refresh();
+setInterval(refresh, 2000);
+</script>
+</body>
+</html>

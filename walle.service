@@ -1,0 +1,28 @@
+[Unit]
+Description=WALL-E Autonomous Rover Control Center & FastAPI Backend
+After=network.target local-fs.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/WALLE_Software_Starter
+Environment="PATH=/home/pi/WALLE_Software_Starter/.venv/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="PYTHONUNBUFFERED=1"
+Environment="CAMERA_INDEX=0"
+Environment="ESP32_PORT=/dev/ttyUSB0"
+Environment="ESP32_BAUDRATE=115200"
+Environment="PERSON_MODEL_PATH=models/yolov8n.onnx"
+Environment="PERSON_INPUT_WIDTH=320"
+Environment="PERSON_INPUT_HEIGHT=320"
+Environment="PERSON_CONFIDENCE_THRESHOLD=0.50"
+Environment="PERSON_NMS_THRESHOLD=0.40"
+ExecStart=/home/pi/WALLE_Software_Starter/.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
+Restart=on-failure
+RestartSec=5s
+KillSignal=SIGINT
+TimeoutStopSec=10s
+
+[Install]
+WantedBy=multi-user.target
