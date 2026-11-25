@@ -230,6 +230,7 @@ class SimulationArena:
 
         # Initial Scene State
         self.robot = ArenaRobot(x=2.5, y=4.0, heading_deg=0.0)
+        self.robot_radius = 0.35  # meters (bounding footprint radius)
         self.people: Dict[int, ArenaPerson] = {
             1: ArenaPerson(person_id=1, x=5.0, y=4.0, speed=1.0, is_target=True)
         }
@@ -396,11 +397,21 @@ class SimulationArena:
         - Zero forward movement (rotation in place only).
         - Stops immediately when the target enters camera FOV (|bearing| <= 15 deg).
         - Overridden immediately by obstacle, stale sensor, E-STOP, or ESP32 disconnect.
+        - Must not cancel active obstacle avoidance detours.
+        - Must not bypass obstacle recovery HOLD.
         """
         if self.selected_target_id is None or self.selected_target_id not in self.people:
             self.search_active = False
             self.target_reacquisition_status = ReacquisitionStatus.NOT_FOUND
             return {"ok": False, "reason": "TARGET LOST"}
+
+        # Active obstacle detour protection
+        if self.navigation_mode == NavigationMode.OBSTACLE_AVOIDANCE and self.avoidance_state in (AvoidanceState.PLANNING, AvoidanceState.NAVIGATING):
+            return {"ok": False, "reason": "OBSTACLE DETOUR ACTIVE"}
+
+        # Recovery HOLD invariant
+        if self.arena_was_in_obstacle_stop or (self.follow_controller and getattr(self.follow_controller, "was_in_obstacle_stop", False)):
+            return {"ok": False, "reason": "OBSTACLE RECOVERY HOLD"}
 
         # Safety overrides
         if self.follow_controller:
@@ -418,10 +429,25 @@ class SimulationArena:
             self.search_active = False
             return {"ok": False, "reason": "COMMUNICATION FAILURE"}
 
+        # If target already visible and aligned in camera cone, no search is required
+        target_p = self.people.get(self.selected_target_id)
+        if target_p:
+            dist_t, bear_t = self.compute_relative_polar(target_p.x, target_p.y)
+            fov_half = self.camera_fov_deg / 2.0
+            if dist_t <= self.camera_range_m and abs(bear_t) <= 15.0:
+                self.search_active = False
+                self.navigation_mode = NavigationMode.DIRECT_FOLLOW
+                self.target_reacquisition_status = ReacquisitionStatus.ACQUIRED
+                self.search_angle_accumulated = 0.0
+                return {"ok": True, "target_id": self.selected_target_id, "search_active": False, "status": "ALREADY_ACQUIRED"}
+
         self.search_active = True
         self.navigation_mode = NavigationMode.TARGET_SEARCH
         self.target_reacquisition_status = ReacquisitionStatus.SEARCHING
         self.search_angle_accumulated = 0.0
+        if target_p:
+            _, bear_t = self.compute_relative_polar(target_p.x, target_p.y)
+            self.search_direction = "left" if bear_t < 0.0 else "right"
         if self.follow_controller:
             self.follow_controller.reacquire_target()
         return {"ok": True, "target_id": self.selected_target_id, "search_active": True}
@@ -433,6 +459,14 @@ class SimulationArena:
         if self.selected_target_id is None or self.selected_target_id not in self.people:
             self.target_reacquisition_status = ReacquisitionStatus.NOT_FOUND
             return {"ok": False, "reason": "No target locked to search for"}
+
+        # Active obstacle detour protection
+        if self.navigation_mode == NavigationMode.OBSTACLE_AVOIDANCE and self.avoidance_state in (AvoidanceState.PLANNING, AvoidanceState.NAVIGATING):
+            return {"ok": False, "reason": "OBSTACLE DETOUR ACTIVE"}
+
+        # Recovery HOLD invariant
+        if self.arena_was_in_obstacle_stop or (self.follow_controller and getattr(self.follow_controller, "was_in_obstacle_stop", False)):
+            return {"ok": False, "reason": "OBSTACLE RECOVERY HOLD"}
 
         # Safety overrides
         if self.follow_controller and self.follow_controller.emergency_stop_latched:
@@ -472,9 +506,32 @@ class SimulationArena:
                     closest_obs = obs
         return closest_obs
 
+    def check_segment_clearance(self, x1: float, y1: float, x2: float, y2: float, ignore_obs_id: Optional[str] = None, margin: float = 0.15) -> bool:
+        """
+        Validates swept-path clearance for the robot's rectangular footprint along segment (x1, y1)-(x2, y2).
+        Checks distance to all arena obstacles against (obs.radius + robot_radius + margin).
+        Also validates that the segment stays within arena boundary margins.
+        """
+        required_buffer = getattr(self, "robot_radius", 0.35) + margin
+        if not (required_buffer <= x1 <= self.arena_width - required_buffer and
+                required_buffer <= y1 <= self.arena_height - required_buffer and
+                required_buffer <= x2 <= self.arena_width - required_buffer and
+                required_buffer <= y2 <= self.arena_height - required_buffer):
+            return False
+
+        for obs in self.obstacles.values():
+            if ignore_obs_id and obs.id == ignore_obs_id:
+                continue
+            min_dist = point_to_segment_distance(obs.x, obs.y, x1, y1, x2, y2)
+            if min_dist < (obs.radius + required_buffer):
+                return False
+
+        return True
+
     def plan_detour(self) -> bool:
         """
         Uses known 2D obstacle geometry to evaluate left and right clearance and plan a collision-free detour path.
+        Validates robot footprint swept-path clearance against all obstacles.
         Returns True if a safe detour was planned, or False if both directions are blocked.
         """
         blocking_obs = self.find_blocking_obstacle()
@@ -501,7 +558,8 @@ class SimulationArena:
         ty = target_p.y if target_p else yr + 2.5 * uy
 
         r_obs = blocking_obs.radius
-        clearance_offset = r_obs + 0.75  # Rover clearance + buffer
+        robot_rad = getattr(self, "robot_radius", 0.35)
+        clearance_offset = r_obs + robot_rad + 0.40  # Rover clearance + buffer
 
         candidate_sides = [("LEFT", n_left), ("RIGHT", n_right)]
         feasible_routes = []
@@ -515,44 +573,28 @@ class SimulationArena:
             w2_x = blocking_obs.x + (r_obs + 0.85) * ux + clearance_offset * nx
             w2_y = blocking_obs.y + (r_obs + 0.85) * uy + clearance_offset * ny
 
-            # Check 1: Arena boundaries
-            margin = 0.55
-            if not (margin <= w1_x <= self.arena_width - margin and margin <= w1_y <= self.arena_height - margin):
-                continue
-            if not (margin <= w2_x <= self.arena_width - margin and margin <= w2_y <= self.arena_height - margin):
+            # 1. Check segment from robot (xr, yr) to W1 (ignoring blocking_obs which we check separately)
+            if not self.check_segment_clearance(xr, yr, w1_x, w1_y, ignore_obs_id=blocking_obs.id, margin=0.10):
                 continue
 
-            # Check 2: Collision with other obstacles
-            is_collision_free = True
-            for other_obs in self.obstacles.values():
-                if other_obs.id == blocking_obs.id:
-                    continue
-                # Distance to W1 and W2
-                if math.hypot(w1_x - other_obs.x, w1_y - other_obs.y) < other_obs.radius + 0.45:
-                    is_collision_free = False
-                    break
-                if math.hypot(w2_x - other_obs.x, w2_y - other_obs.y) < other_obs.radius + 0.45:
-                    is_collision_free = False
-                    break
-                # Distance along segments
-                if point_to_segment_distance(other_obs.x, other_obs.y, xr, yr, w1_x, w1_y) < other_obs.radius + 0.35:
-                    is_collision_free = False
-                    break
-                if point_to_segment_distance(other_obs.x, other_obs.y, w1_x, w1_y, w2_x, w2_y) < other_obs.radius + 0.35:
-                    is_collision_free = False
-                    break
+            # 2. Check segment W1 to W2 (ignoring blocking_obs which we check separately)
+            if not self.check_segment_clearance(w1_x, w1_y, w2_x, w2_y, ignore_obs_id=blocking_obs.id, margin=0.10):
+                continue
 
-            # Check 3: Segment from robot to W1 doesn't clip blocking obstacle
-            if point_to_segment_distance(blocking_obs.x, blocking_obs.y, xr, yr, w1_x, w1_y) < blocking_obs.radius + 0.15:
-                is_collision_free = False
+            # 3. Clearance from blocking_obs along segments
+            # Segment robot -> W1 must maintain clearance from blocking obstacle
+            if point_to_segment_distance(blocking_obs.x, blocking_obs.y, xr, yr, w1_x, w1_y) < (blocking_obs.radius + 0.20):
+                continue
+            # Segment W1 -> W2 must clear blocking obstacle with footprint margin
+            if point_to_segment_distance(blocking_obs.x, blocking_obs.y, w1_x, w1_y, w2_x, w2_y) < (blocking_obs.radius + robot_rad + 0.05):
+                continue
 
-            if is_collision_free:
-                # Compute total path distance to target
-                dist_to_w1 = math.hypot(w1_x - xr, w1_y - yr)
-                dist_w1_w2 = math.hypot(w2_x - w1_x, w2_y - w1_y)
-                dist_w2_target = math.hypot(tx - w2_x, ty - w2_y)
-                total_dist = dist_to_w1 + dist_w1_w2 + dist_w2_target
-                feasible_routes.append((side_name, [(w1_x, w1_y), (w2_x, w2_y)], total_dist))
+            # Compute total path distance to target
+            dist_to_w1 = math.hypot(w1_x - xr, w1_y - yr)
+            dist_w1_w2 = math.hypot(w2_x - w1_x, w2_y - w1_y)
+            dist_w2_target = math.hypot(tx - w2_x, ty - w2_y)
+            total_dist = dist_to_w1 + dist_w1_w2 + dist_w2_target
+            feasible_routes.append((side_name, [(w1_x, w1_y), (w2_x, w2_y)], total_dist))
 
         if not feasible_routes:
             # Both directions blocked!
@@ -575,22 +617,50 @@ class SimulationArena:
     def get_stop_reason(self) -> str:
         """
         Determines the current reason for robot stop or non-forward state:
-        OBSTACLE, TARGET OUT OF VIEW, TARGET LOST, TARGET NOT FOUND, SENSOR STALE, E-STOP, COMMUNICATION FAILURE, or NONE.
+        E-STOP, COMMUNICATION FAILURE, SENSOR STALE, OBSTACLE, OBSTACLE RECOVERY HOLD,
+        REACQUIRING TARGET, TARGET OUT OF VIEW, TARGET LOST, TARGET NOT FOUND,
+        HOLDING DISTANCE, FOLLOW DISABLED, or NONE.
+        Invariant: If the robot is stopped (command == "stop" or linear_speed == 0),
+        the stop reason must NEVER be "NONE".
         """
+        # Level 1: E-STOP
         if self.follow_controller and self.follow_controller.emergency_stop_latched:
             return "E-STOP"
+
+        # Level 2: Communication Failure
         if not self._is_comm_connected():
             return "COMMUNICATION FAILURE"
+
+        # Level 3: Sensor Stale / Invalid
         if self.simulate_sensor_fail:
             return "SENSOR STALE"
         if self.follow_controller and (self.follow_controller.ultrasonic_stale or not self.follow_controller.ultrasonic_valid):
             return "SENSOR STALE"
+
+        # Level 4: Obstacle detection or blocked detour
         if self.avoidance_state == AvoidanceState.BLOCKED:
             return "OBSTACLE"
         if (self.simulated_obstacle_active or (self.follow_controller and self.follow_controller.obstacle_detected)) and self.navigation_mode != NavigationMode.OBSTACLE_AVOIDANCE:
             return "OBSTACLE"
+
+        # Active Detour Navigation
+        if self.navigation_mode == NavigationMode.OBSTACLE_AVOIDANCE and self.avoidance_state == AvoidanceState.NAVIGATING:
+            return "NONE"
+
+        # Level 6: Target Search
+        if self.navigation_mode == NavigationMode.TARGET_SEARCH:
+            if self.target_reacquisition_status == ReacquisitionStatus.NOT_FOUND:
+                return "TARGET NOT FOUND"
+            return "TARGET SEARCH"
+
         if self.target_reacquisition_status == ReacquisitionStatus.NOT_FOUND:
             return "TARGET NOT FOUND"
+
+        # Level 5 Detour Post-Completion / Reacquiring
+        if self.avoidance_state == AvoidanceState.REACQUIRING:
+            return "REACQUIRING TARGET"
+
+        # Level 7/8: Target Missing or Lost
         if self.selected_target_id is None or self.selected_target_id not in self.people:
             return "TARGET LOST"
 
@@ -598,8 +668,26 @@ class SimulationArena:
         if target_person:
             dist, bearing = self.compute_relative_polar(target_person.x, target_person.y)
             fov_half = self.camera_fov_deg / 2.0
-            if (abs(bearing) > fov_half or dist > self.camera_range_m) and self.navigation_mode != NavigationMode.TARGET_SEARCH:
+            if (abs(bearing) > fov_half or dist > self.camera_range_m):
                 return "TARGET OUT OF VIEW"
+
+        # Follow Controller Disabled
+        if self.follow_controller and not self.follow_controller.enabled:
+            return "FOLLOW DISABLED"
+
+        # First-Recovery Cycle HOLD
+        if self.arena_was_in_obstacle_stop or (self.follow_controller and getattr(self.follow_controller, "was_in_obstacle_stop", False)):
+            return "OBSTACLE RECOVERY HOLD"
+
+        # Safe following zone HOLD or stopped states
+        if getattr(self.robot, "current_cmd", "stop") == "stop" or self.last_decision in ("HOLD", "STOP") or getattr(self.robot, "linear_speed", 0.0) == 0.0:
+            if target_person:
+                dist, _ = self.compute_relative_polar(target_person.x, target_person.y)
+                if dist <= 1.8:
+                    return "HOLDING DISTANCE"
+            if self.last_decision == "HOLD":
+                return "HOLDING DISTANCE"
+            return "STOP"
 
         return "NONE"
 
@@ -843,11 +931,13 @@ class SimulationArena:
                         # Waypoint reached
                         self.current_waypoint_idx += 1
                         if self.current_waypoint_idx >= len(self.planned_path):
-                            # Detour finished!
+                            # Detour finished! Transition to REACQUIRING target
                             self.avoidance_state = AvoidanceState.REACQUIRING
                             self.navigation_mode = NavigationMode.DIRECT_FOLLOW
                             self.planned_path = []
                             self.detour_direction = DetourDirection.NONE
+                            self.search_active = False
+                            self.search_angle_accumulated = 0.0
                             dispatched_cmd = "stop"
                             dispatched_speed = 0
                             decision = "HOLD"
@@ -861,19 +951,28 @@ class SimulationArena:
                             wp_bearing = (wp_angle_deg - self.robot.heading_deg + 180.0) % 360.0 - 180.0
 
                     if self.navigation_mode == NavigationMode.OBSTACLE_AVOIDANCE:
-                        if abs(wp_bearing) > 15.0:
-                            if wp_bearing < 0.0:
-                                dispatched_cmd = "left"
-                                dispatched_speed = 140
-                                decision = "TURN_LEFT"
+                        # Re-verify swept clearance to wp_x, wp_y
+                        if not self.check_segment_clearance(self.robot.x, self.robot.y, wp_x, wp_y, ignore_obs_id=self.blocking_obstacle_id, margin=0.05):
+                            # Path to waypoint is blocked, attempt replan
+                            if not self.plan_detour():
+                                self.avoidance_state = AvoidanceState.BLOCKED
+                                dispatched_cmd = "stop"
+                                dispatched_speed = 0
+                                decision = "STOP"
+                        if self.avoidance_state != AvoidanceState.BLOCKED:
+                            if abs(wp_bearing) > 15.0:
+                                if wp_bearing < 0.0:
+                                    dispatched_cmd = "left"
+                                    dispatched_speed = 140
+                                    decision = "TURN_LEFT"
+                                else:
+                                    dispatched_cmd = "right"
+                                    dispatched_speed = 140
+                                    decision = "TURN_RIGHT"
                             else:
-                                dispatched_cmd = "right"
-                                dispatched_speed = 140
-                                decision = "TURN_RIGHT"
-                        else:
-                            dispatched_cmd = "forward"
-                            dispatched_speed = 160
-                            decision = "MOVE_FORWARD"
+                                dispatched_cmd = "forward"
+                                dispatched_speed = 160
+                                decision = "MOVE_FORWARD"
 
             # --- FEATURE 2: 360-DEGREE TARGET SEARCH BRANCH ---
             elif self.navigation_mode == NavigationMode.TARGET_SEARCH:
@@ -881,6 +980,7 @@ class SimulationArena:
                 if not target_p:
                     self.target_reacquisition_status = ReacquisitionStatus.NOT_FOUND
                     self.navigation_mode = NavigationMode.DIRECT_FOLLOW
+                    self.search_active = False
                     dispatched_cmd = "stop"
                     dispatched_speed = 0
                     decision = "STOP"
@@ -898,7 +998,7 @@ class SimulationArena:
                             dispatched_speed = 0
                             decision = "HOLD"
                         else:
-                            # Steer toward target to center it
+                            # Steer toward target in place to center it (linear speed strictly 0.0)
                             if bear_t < 0.0:
                                 dispatched_cmd = "left"
                                 dispatched_speed = 120
@@ -909,7 +1009,7 @@ class SimulationArena:
                                 decision = "TURN_RIGHT"
                             self.search_angle_accumulated += self.search_rotation_speed_deg * dt_val
                     else:
-                        # Continue rotating in place in search direction
+                        # Continue rotating in place in search direction (linear speed strictly 0.0)
                         dispatched_cmd = self.search_direction
                         dispatched_speed = 120
                         decision = "TURN_RIGHT" if self.search_direction == "right" else "TURN_LEFT"
@@ -937,12 +1037,24 @@ class SimulationArena:
                 decision = "STOP"
 
             else:
-                # In Person Following mode, if target is in range and outside safe distance,
-                # allow virtual forward following ONLY when ultrasonic path is confirmed clear and valid
-                target_in_range = (self.selected_target_id in self.people and
-                                   target_dist <= self.camera_range_m)
+                # In Person Following mode (DIRECT_FOLLOW)
+                # Ensure state synchronization
+                self.search_active = False
+                self.search_angle_accumulated = 0.0
+                if self.target_reacquisition_status == ReacquisitionStatus.SEARCHING:
+                    self.target_reacquisition_status = ReacquisitionStatus.ACQUIRED
 
-                if (self.follow_controller.enabled and
+                target_in_range = (self.selected_target_id in self.people and
+                                   target_dist <= self.camera_range_m and
+                                   abs(target_bearing) <= 90.0)
+
+                # Transition REACQUIRING -> CLEAR when target is in view and aligned
+                if self.avoidance_state == AvoidanceState.REACQUIRING:
+                    if target_in_range and abs(target_bearing) <= 15.0:
+                        self.avoidance_state = AvoidanceState.CLEAR
+
+                if (self.follow_controller and
+                    self.follow_controller.enabled and
                     not self.follow_controller.emergency_stop_latched and
                     not self.follow_controller.obstacle_detected and
                     not self.simulate_sensor_fail and
@@ -986,6 +1098,14 @@ class SimulationArena:
                             dispatched_cmd = "stop"
                             dispatched_speed = 0
                             decision = "HOLD"
+                elif self.follow_controller and not self.follow_controller.enabled:
+                    dispatched_cmd = "stop"
+                    dispatched_speed = 0
+                    decision = "STOP"
+                elif not target_in_range:
+                    dispatched_cmd = "stop"
+                    dispatched_speed = 0
+                    decision = "STOP"
                 elif self.simulate_sensor_fail or not self.follow_controller.is_forward_path_clear()[0]:
                     dispatched_cmd = "stop"
                     dispatched_speed = 0
