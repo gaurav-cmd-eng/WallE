@@ -1939,6 +1939,12 @@ function renderArena() {
   const w = arenaCanvas.width;
   const h = arenaCanvas.height;
 
+  // Defensive: Always reset transformation matrix to identity before clearing and rendering frame
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+  const ar = arenaState.arena || {};
+  const robot = arenaState.robot || { x: 2.5, y: 4.0, heading_deg: 0 };
+
   // 1. Background Grid
   ctx.fillStyle = '#0d1822';
   ctx.fillRect(0, 0, w, h);
@@ -1983,39 +1989,41 @@ function renderArena() {
   const plannedPath = arenaState.planned_path || [];
   if (plannedPath.length > 1) {
     ctx.save();
-    ctx.strokeStyle = '#ffd43b';
-    ctx.lineWidth = 2.5;
-    ctx.setLineDash([8, 5]);
-    ctx.beginPath();
-    ctx.moveTo(toCanvasX(plannedPath[0][0]), toCanvasY(plannedPath[0][1]));
-    for (let i = 1; i < plannedPath.length; i++) {
-      ctx.lineTo(toCanvasX(plannedPath[i][0]), toCanvasY(plannedPath[i][1]));
-    }
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    // Draw waypoints
-    for (let i = 1; i < plannedPath.length; i++) {
-      const wx = toCanvasX(plannedPath[i][0]);
-      const wy = toCanvasY(plannedPath[i][1]);
-      ctx.fillStyle = '#fab005';
+    try {
+      ctx.strokeStyle = '#ffd43b';
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([8, 5]);
       ctx.beginPath();
-      ctx.arc(wx, wy, 5, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 1.5;
+      ctx.moveTo(toCanvasX(plannedPath[0][0]), toCanvasY(plannedPath[0][1]));
+      for (let i = 1; i < plannedPath.length; i++) {
+        ctx.lineTo(toCanvasX(plannedPath[i][0]), toCanvasY(plannedPath[i][1]));
+      }
       ctx.stroke();
+      ctx.setLineDash([]);
 
-      ctx.fillStyle = '#ffd43b';
-      ctx.font = 'bold 10px monospace';
-      ctx.textAlign = 'left';
-      ctx.fillText(`W${i}`, wx + 7, wy - 3);
+      // Draw waypoints
+      for (let i = 1; i < plannedPath.length; i++) {
+        const wx = toCanvasX(plannedPath[i][0]);
+        const wy = toCanvasY(plannedPath[i][1]);
+        ctx.fillStyle = '#fab005';
+        ctx.beginPath();
+        ctx.arc(wx, wy, 5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        ctx.fillStyle = '#ffd43b';
+        ctx.font = 'bold 10px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText(`W${i}`, wx + 7, wy - 3);
+      }
+    } finally {
+      ctx.restore();
     }
-    ctx.restore();
   }
 
   // 3. Robot Trail
-  const robot = arenaState.robot || { x: 2.5, y: 4.0, heading_deg: 0 };
   const rTrail = robot.trail || [];
   if (rTrail.length > 1) {
     ctx.strokeStyle = 'rgba(116, 192, 252, 0.35)';
@@ -2032,87 +2040,89 @@ function renderArena() {
   const ry = toCanvasY(robot.y);
   const rRad = (robot.heading_deg * Math.PI) / 180.0;
 
-  // 4. Safe Following Zone Arc from Robot
+  // 4. Safe Following Zone Arc from Robot & Rover
   ctx.save();
-  ctx.translate(rx, ry);
-  ctx.rotate(rRad);
+  try {
+    ctx.translate(rx, ry);
+    ctx.rotate(rRad);
 
-  // Ultrasonic & Camera FOV cone
-  ctx.fillStyle = 'rgba(51, 154, 240, 0.08)';
-  ctx.strokeStyle = 'rgba(51, 154, 240, 0.35)';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(0, 0);
-  const fovRad = (75.0 * Math.PI) / 180.0 / 2.0;
-  const fovRangePx = 6.0 * ARENA_SCALE_X;
-  ctx.arc(0, 0, fovRangePx, -fovRad, fovRad);
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
-
-  // Dynamic Target Following Zone Arc (safe_zone_min_m to safe_zone_max_m)
-  const szMax = (ar.safe_zone_max_m !== undefined) ? ar.safe_zone_max_m : 2.8;
-  const szMin = (ar.safe_zone_min_m !== undefined) ? ar.safe_zone_min_m : 2.2;
-  const setpointDist = (ar.target_following_distance_m !== undefined) ? ar.target_following_distance_m : 2.5;
-
-  ctx.fillStyle = 'rgba(64, 192, 87, 0.12)';
-  ctx.strokeStyle = 'rgba(64, 192, 87, 0.5)';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.arc(0, 0, szMax * ARENA_SCALE_X, -fovRad, fovRad);
-  ctx.arc(0, 0, szMin * ARENA_SCALE_X, fovRad, -fovRad, true);
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
-
-  // Setpoint indicator arc
-  ctx.strokeStyle = 'rgba(116, 192, 252, 0.65)';
-  ctx.lineWidth = 1.5;
-  ctx.setLineDash([4, 4]);
-  ctx.beginPath();
-  ctx.arc(0, 0, setpointDist * ARENA_SCALE_X, -fovRad, fovRad);
-  ctx.stroke();
-  ctx.setLineDash([]);
-
-  // 360 Degree Search Sweep Indicator
-  if (arenaState.navigation_mode === 'TARGET_SEARCH') {
-    const searchDeg = arenaState.target_search_progress_deg || 0;
-    const sweepRad = (searchDeg * Math.PI) / 180.0;
-    ctx.fillStyle = 'rgba(218, 119, 242, 0.18)';
-    ctx.strokeStyle = 'rgba(218, 119, 242, 0.7)';
-    ctx.lineWidth = 2;
+    // Ultrasonic & Camera FOV cone
+    ctx.fillStyle = 'rgba(51, 154, 240, 0.08)';
+    ctx.strokeStyle = 'rgba(51, 154, 240, 0.35)';
+    ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(0, 0);
-    // Draw sweep from robot's current local orientation backwards through the scanned sweep
-    ctx.arc(0, 0, 3.5 * ARENA_SCALE_X, -sweepRad, 0);
+    const fovRad = (75.0 * Math.PI) / 180.0 / 2.0;
+    const fovRangePx = 6.0 * ARENA_SCALE_X;
+    ctx.arc(0, 0, fovRangePx, -fovRad, fovRad);
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
+
+    // Dynamic Target Following Zone Arc (safe_zone_min_m to safe_zone_max_m)
+    const szMax = (ar.safe_zone_max_m !== undefined) ? ar.safe_zone_max_m : 2.8;
+    const szMin = (ar.safe_zone_min_m !== undefined) ? ar.safe_zone_min_m : 2.2;
+    const setpointDist = (ar.target_following_distance_m !== undefined) ? ar.target_following_distance_m : 2.5;
+
+    ctx.fillStyle = 'rgba(64, 192, 87, 0.12)';
+    ctx.strokeStyle = 'rgba(64, 192, 87, 0.5)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(0, 0, szMax * ARENA_SCALE_X, -fovRad, fovRad);
+    ctx.arc(0, 0, szMin * ARENA_SCALE_X, fovRad, -fovRad, true);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Setpoint indicator arc
+    ctx.strokeStyle = 'rgba(116, 192, 252, 0.65)';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.arc(0, 0, setpointDist * ARENA_SCALE_X, -fovRad, fovRad);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // 360 Degree Search Sweep Indicator
+    if (arenaState.navigation_mode === 'TARGET_SEARCH') {
+      const searchDeg = arenaState.target_search_progress_deg || 0;
+      const sweepRad = (searchDeg * Math.PI) / 180.0;
+      ctx.fillStyle = 'rgba(218, 119, 242, 0.18)';
+      ctx.strokeStyle = 'rgba(218, 119, 242, 0.7)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      // Draw sweep from robot's current local orientation backwards through the scanned sweep
+      ctx.arc(0, 0, 3.5 * ARENA_SCALE_X, -sweepRad, 0);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+
+    // 5. Virtual WALL-E Rover Rendering
+    // Tracks
+    ctx.fillStyle = '#263746';
+    ctx.fillRect(-20, -18, 40, 8);
+    ctx.fillRect(-20, 10, 40, 8);
+    // Chassis
+    ctx.fillStyle = '#d49b22';
+    ctx.fillRect(-16, -10, 32, 20);
+    // Solar panel stripe
+    ctx.fillStyle = '#101820';
+    ctx.fillRect(-12, -7, 24, 14);
+    // Neck & Binocular Head Eyes
+    ctx.fillStyle = '#e8d8b5';
+    ctx.fillRect(8, -8, 10, 7);
+    ctx.fillRect(8, 1, 10, 7);
+    // Lens reflections
+    ctx.fillStyle = '#339af0';
+    ctx.beginPath();
+    ctx.arc(17, -4.5, 3, 0, Math.PI * 2);
+    ctx.arc(17, 4.5, 3, 0, Math.PI * 2);
+    ctx.fill();
+  } finally {
+    ctx.restore();
   }
-
-  // 5. Virtual WALL-E Rover Rendering
-  // Tracks
-  ctx.fillStyle = '#263746';
-  ctx.fillRect(-20, -18, 40, 8);
-  ctx.fillRect(-20, 10, 40, 8);
-  // Chassis
-  ctx.fillStyle = '#d49b22';
-  ctx.fillRect(-16, -10, 32, 20);
-  // Solar panel stripe
-  ctx.fillStyle = '#101820';
-  ctx.fillRect(-12, -7, 24, 14);
-  // Neck & Binocular Head Eyes
-  ctx.fillStyle = '#e8d8b5';
-  ctx.fillRect(8, -8, 10, 7);
-  ctx.fillRect(8, 1, 10, 7);
-  // Lens reflections
-  ctx.fillStyle = '#339af0';
-  ctx.beginPath();
-  ctx.arc(17, -4.5, 3, 0, Math.PI * 2);
-  ctx.arc(17, 4.5, 3, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.restore();
 
   // Label Robot
   ctx.fillStyle = '#74c0fc';
